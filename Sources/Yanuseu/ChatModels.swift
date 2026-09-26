@@ -1,15 +1,30 @@
 import Foundation
 
+struct ToolCall: Identifiable, Codable, Equatable {
+    struct Function: Codable, Equatable {
+        var name: String
+        var arguments: String
+    }
+
+    var id: String
+    var type: String = "function"
+    var function: Function
+}
+
 struct ChatMessage: Identifiable, Codable, Equatable {
     enum Role: String, Codable {
         case user
         case assistant
+        case tool
     }
 
     var id: UUID = UUID()
     var role: Role
     var content: String
     var createdAt: Date = Date()
+    var toolCallID: String? = nil
+    var toolName: String? = nil
+    var toolCalls: [ToolCall]? = nil
 }
 
 struct Conversation: Identifiable, Codable, Equatable {

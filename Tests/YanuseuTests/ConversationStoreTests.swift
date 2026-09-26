@@ -14,13 +14,17 @@ final class ConversationStoreTests: XCTestCase {
         }
 
         let store = ConversationStore(fileURL: file, defaults: defaults)
+        let directoryValues = try XCTUnwrap(try? file.deletingLastPathComponent().resourceValues(forKeys: [.isExcludedFromBackupKey]))
+        XCTAssertEqual(directoryValues.isExcludedFromBackup, true)
         store.append(ChatMessage(role: .user, content: "Remember this locally"))
         let conversationID = store.activeID
         let restored = ConversationStore(fileURL: file, defaults: defaults)
 
         XCTAssertEqual(restored.activeID, conversationID)
         XCTAssertEqual(restored.activeConversation.messages.map(\.content), ["Remember this locally"])
-        restored.delete(conversationID)
-        XCTAssertTrue(restored.activeConversation.messages.isEmpty)
+        restored.deleteAll()
+        let cleared = ConversationStore(fileURL: file, defaults: defaults)
+        XCTAssertTrue(cleared.activeConversation.messages.isEmpty)
+        XCTAssertEqual(cleared.conversations.count, 1)
     }
 }

@@ -15,7 +15,7 @@ struct AppRootView: View {
 
 struct ChatView: View {
     @AppStorage("provider.baseURL") private var baseURL = "https://api.openai.com/v1"
-    @AppStorage("provider.model") private var model = "gpt-4o-mini"
+    @AppStorage("provider.model") private var model = ""
     @StateObject private var store = ConversationStore()
     @State private var draft = ""
     @State private var streamingText = ""
@@ -71,6 +71,7 @@ struct ChatView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarLeading) {
                     Button { showConversations = true } label: { Image(systemName: "list.bullet") }
+                        .disabled(isSending)
                         .accessibilityLabel("Conversations")
                     Button { store.newConversation() } label: { Image(systemName: "square.and.pencil") }
                         .disabled(isSending)
@@ -78,6 +79,7 @@ struct ChatView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                        .disabled(isSending)
                         .accessibilityLabel("Provider settings")
                 }
             }
@@ -145,26 +147,62 @@ struct ChatView: View {
         }
         isSending = true
         streamingText = ""
-        let messages = store.activeConversation.messages
         requestTask = Task { @MainActor in
-            defer { isSending = false; requestTask = nil }
+            defer { isSending = false; requestTask = nil; streamingText = "" }
             do {
-                for try await delta in ChatService.stream(messages: messages, model: model, baseURL: baseURL, apiKey: apiKey) {
-                    streamingText += delta
-                }
-                if !streamingText.isEmpty {
-                    store.append(ChatMessage(role: .assistant, content: streamingText))
-                } else {
-                    requestError = "The provider completed the request without returning a text response."
+                for round in 0..<4 {
+                    var responseText = ""
+                    var toolFragments: [Int: ToolCallFragment] = [:]
+                    let history = store.activeConversation.messages
+                    for try await event in ChatService.stream(messages: history, model: model, baseURL: baseURL, apiKey: apiKey) {
+                        if Task.isCancelled { throw CancellationError() }
+                        switch event {
+                        case .text(let token):
+                            responseText += token
+                            streamingText = responseText
+                        case .toolCall(let index, let id, let name, let arguments):
+                            var fragment = toolFragments[index] ?? ToolCallFragment()
+                            fragment.id += id ?? ""
+                            fragment.name += name ?? ""
+                            fragment.arguments += arguments ?? ""
+                            toolFragments[index] = fragment
+                        case .finished:
+                            break
+                        }
+                    }
+                    let calls = try toolFragments.keys.sorted().map { index -> ToolCall in
+                        guard let fragment = toolFragments[index],
+                              !fragment.id.isEmpty, !fragment.name.isEmpty else {
+                            throw AgentError.incompleteToolCall
+                        }
+                        return ToolCall(id: fragment.id, function: .init(name: fragment.name, arguments: fragment.arguments))
+                    }
+                    guard !calls.isEmpty else {
+                        guard !responseText.isEmpty else {
+                            requestError = "The provider completed the request without returning a text response."
+                            return
+                        }
+                        store.append(ChatMessage(role: .assistant, content: responseText))
+                        return
+                    }
+                    if round == 3 {
+                        store.append(ChatMessage(role: .assistant, content: "I stopped after four tool rounds for safety. You can continue with another message."))
+                        return
+                    }
+                    store.append(ChatMessage(role: .assistant, content: responseText, toolCalls: calls))
+                    for (index, call) in calls.enumerated() {
+                        let result = index < 4
+                            ? ToolExecutor.execute(call)
+                            : "Tool call limit reached; no action was taken."
+                        store.append(ChatMessage(role: .tool, content: result, toolCallID: call.id, toolName: call.function.name))
+                    }
+                    streamingText = ""
                 }
             } catch is CancellationError {
-                if !streamingText.isEmpty {
-                    store.append(ChatMessage(role: .assistant, content: streamingText))
-                }
+                if !streamingText.isEmpty { store.append(ChatMessage(role: .assistant, content: streamingText)) }
             } catch {
                 requestError = error.localizedDescription
             }
-            streamingText = ""
         }
     }
 
@@ -177,24 +215,58 @@ struct ChatView: View {
     }
 }
 
+private struct ToolCallFragment {
+    var id = ""
+    var name = ""
+    var arguments = ""
+}
+
+private enum AgentError: LocalizedError {
+    case incompleteToolCall
+
+    var errorDescription: String? {
+        "The provider returned an incomplete tool request; nothing was executed."
+    }
+}
+
 private struct MessageBubble: View {
     let message: ChatMessage
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            if message.role == .assistant {
+            if message.role == .user {
+                Spacer(minLength: 32)
+            } else if message.role == .assistant {
                 Image(systemName: "sparkles").foregroundStyle(.tint).padding(.top, 3)
             } else {
-                Spacer(minLength: 32)
+                Image(systemName: "function").foregroundStyle(.orange).padding(.top, 3)
             }
-            Text(message.content)
+            Text(displayText)
                 .textSelection(.enabled)
                 .padding(12)
-                .background(message.role == .user ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
-            if message.role == .assistant { Spacer(minLength: 32) }
+                .background(background, in: RoundedRectangle(cornerRadius: 16))
+            if message.role != .user { Spacer(minLength: 32) }
         }
         .padding(.horizontal)
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+    }
+
+    private var displayText: String {
+        if message.role == .tool {
+            return "\(message.toolName ?? "Tool") result: \(message.content)"
+        }
+        if message.role == .assistant, message.content.isEmpty, let calls = message.toolCalls, !calls.isEmpty {
+            return "Calling \(calls.map(\.function.name).joined(separator: ", "))…"
+        }
+        return message.content
+    }
+
+    private var background: Color {
+        switch message.role {
+        case .user: return Color.accentColor.opacity(0.15)
+        case .assistant: return Color.secondary.opacity(0.10)
+        case .tool: return Color.orange.opacity(0.12)
+        }
     }
 }
 
@@ -204,6 +276,7 @@ private struct ConversationListView: View {
     @State private var renameTarget: Conversation?
     @State private var renameText = ""
     @State private var deleteTarget: Conversation?
+    @State private var confirmClearAll = false
 
     var body: some View {
         NavigationStack {
@@ -229,7 +302,18 @@ private struct ConversationListView: View {
                 }
             }
             .navigationTitle("Conversations")
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Clear All Conversation History", systemImage: "trash", role: .destructive) {
+                            confirmClearAll = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    Button("Done") { dismiss() }
+                }
+            }
             .alert("Rename conversation", isPresented: Binding(
                 get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } }
             )) {
@@ -242,6 +326,12 @@ private struct ConversationListView: View {
             ), titleVisibility: .visible) {
                 Button("Delete Conversation", role: .destructive) { if let target = deleteTarget { store.delete(target.id) }; deleteTarget = nil }
                 Button("Cancel", role: .cancel) { deleteTarget = nil }
+            }
+            .confirmationDialog("Remove all saved conversation history?", isPresented: $confirmClearAll, titleVisibility: .visible) {
+                Button("Clear All History", role: .destructive) { store.deleteAll() }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This clears transcripts from this iPhone. Requests already sent to your provider cannot be recalled.")
             }
         }
     }

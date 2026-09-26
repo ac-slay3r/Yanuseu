@@ -74,6 +74,7 @@ struct ProviderSetupView: View {
                     }
                 } footer: {
                     Text("Yanuseu sends chat messages to this provider. Conversation history stays on this iPhone unless you remove it.")
+                    Text("Provider requests go directly to the HTTPS endpoint you enter; its operator controls any retention. Yanuseu does not add a relay or cloud history service. Review your provider’s policy before sending sensitive content.")
                 }
 
                 if isConfigured {

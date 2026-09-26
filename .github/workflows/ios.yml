@@ -19,5 +19,21 @@ jobs:
         run: brew install xcodegen
       - name: Generate project
         run: xcodegen generate
-      - name: Compile app and unit-test bundles for iOS Simulator
-        run: xcodebuild build-for-testing -project Yanuseu.xcodeproj -scheme Yanuseu -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
+      - name: Create iPhone simulator
+        id: simulator
+        shell: bash
+        run: |
+          SIM_RUNTIME="$(xcrun simctl list runtimes --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next((r["identifier"] for r in d["runtimes"] if r.get("isAvailable") and r.get("name", "").startswith("iOS")), ""))')"
+          SIM_TYPE="$(xcrun simctl list devicetypes --json | python3 -c 'import json,sys; d=json.load(sys.stdin); a=[x for x in d["devicetypes"] if x.get("name", "").startswith("iPhone")]; print(next((x["identifier"] for x in a if "iPhone 16" in x["name"]), a[0]["identifier"] if a else ""))')"
+          if [[ -z "$SIM_RUNTIME" || -z "$SIM_TYPE" ]]; then
+            echo "No available iOS simulator runtime/device type on this runner." >&2
+            xcrun simctl list runtimes
+            xcrun simctl list devicetypes
+            exit 1
+          fi
+          DEVICE_ID="$(xcrun simctl create Yanuseu-CI "$SIM_TYPE" "$SIM_RUNTIME")"
+          echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$DEVICE_ID"
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+      - name: Build and run iOS unit tests
+        run: xcodebuild test -project Yanuseu.xcodeproj -scheme Yanuseu -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.device_id }}' CODE_SIGNING_ALLOWED=NO

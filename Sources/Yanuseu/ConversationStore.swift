@@ -54,6 +54,14 @@ final class ConversationStore: ObservableObject {
         persist()
     }
 
+    func deleteAll() {
+        let replacement = Conversation(title: "New conversation")
+        conversations = [replacement]
+        activeID = replacement.id
+        defaults.set(replacement.id.uuidString, forKey: "conversation.activeID")
+        persist()
+    }
+
     func delete(_ id: UUID) {
         conversations.removeAll { $0.id == id }
         if conversations.isEmpty { conversations = [Conversation(title: "New conversation")] }
@@ -68,8 +76,12 @@ final class ConversationStore: ObservableObject {
         do {
             let parent = fileURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+            var protectedDirectory = parent
+            var directoryValues = URLResourceValues()
+            directoryValues.isExcludedFromBackup = true
+            try protectedDirectory.setResourceValues(directoryValues)
             let data = try JSONEncoder().encode(conversations)
-            try data.write(to: fileURL, options: .atomic)
+            try data.write(to: fileURL, options: [.atomic, .completeFileProtection])
             persistenceError = nil
         } catch {
             persistenceError = "Could not save conversation history on this iPhone."
