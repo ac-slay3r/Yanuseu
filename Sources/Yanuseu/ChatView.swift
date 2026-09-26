@@ -182,59 +182,22 @@ struct ChatView: View {
         }
         isSending = true
         streamingText = ""
+        let configuration = AgentTurnConfiguration(model: model, baseURL: baseURL, apiKey: apiKey,
+                                                    calculatorEnabled: calculatorEnabled, instructions: agentInstructions)
         requestTask = Task { @MainActor in
             defer { isSending = false; requestTask = nil; streamingText = "" }
             do {
-                for round in 0..<4 {
-                    var responseText = ""
-                    var toolFragments: [Int: ToolCallFragment] = [:]
-                    let history = store.activeConversation.messages
-                    for try await event in ChatService.stream(messages: history, model: model, baseURL: baseURL, apiKey: apiKey, calculatorEnabled: calculatorEnabled, instructions: agentInstructions) {
-                        if Task.isCancelled { throw CancellationError() }
-                        switch event {
-                        case .text(let token):
-                            responseText += token
-                            streamingText = responseText
-                        case .toolCall(let index, let id, let name, let arguments):
-                            var fragment = toolFragments[index] ?? ToolCallFragment()
-                            fragment.id += id ?? ""
-                            fragment.name += name ?? ""
-                            fragment.arguments += arguments ?? ""
-                            toolFragments[index] = fragment
-                        case .finished:
-                            break
-                        }
+                try await AgentRuntime().run(messages: store.activeConversation.messages, configuration: configuration) { event in
+                    switch event {
+                    case .text(let text): streamingText = text
+                    case .message(let message):
+                        store.append(message)
+                        if store.persistenceError != nil { throw AgentRuntimeError.persistenceFailed }
+                        streamingText = ""
+                    case .cancelled(let partial):
+                        if !partial.isEmpty { store.append(ChatMessage(role: .assistant, content: partial)) }
                     }
-                    let calls = try toolFragments.keys.sorted().map { index -> ToolCall in
-                        guard let fragment = toolFragments[index],
-                              !fragment.id.isEmpty, !fragment.name.isEmpty else {
-                            throw AgentError.incompleteToolCall
-                        }
-                        return ToolCall(id: fragment.id, function: .init(name: fragment.name, arguments: fragment.arguments))
-                    }
-                    guard !calls.isEmpty else {
-                        guard !responseText.isEmpty else {
-                            requestError = "The provider completed the request without returning a text response."
-                            return
-                        }
-                        store.append(ChatMessage(role: .assistant, content: responseText))
-                        return
-                    }
-                    if round == 3 {
-                        store.append(ChatMessage(role: .assistant, content: "I stopped after four tool rounds for safety. You can continue with another message."))
-                        return
-                    }
-                    store.append(ChatMessage(role: .assistant, content: responseText, toolCalls: calls))
-                    for (index, call) in calls.enumerated() {
-                        let result = index < 4
-                            ? ToolExecutor.execute(call, calculatorEnabled: calculatorEnabled)
-                            : "Tool call limit reached; no action was taken."
-                        store.append(ChatMessage(role: .tool, content: result, toolCallID: call.id, toolName: call.function.name))
-                    }
-                    streamingText = ""
                 }
-            } catch is CancellationError {
-                if !streamingText.isEmpty { store.append(ChatMessage(role: .assistant, content: streamingText)) }
             } catch {
                 requestError = error.localizedDescription
             }
@@ -247,20 +210,6 @@ struct ChatView: View {
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
-    }
-}
-
-private struct ToolCallFragment {
-    var id = ""
-    var name = ""
-    var arguments = ""
-}
-
-private enum AgentError: LocalizedError {
-    case incompleteToolCall
-
-    var errorDescription: String? {
-        "The provider returned an incomplete tool request; nothing was executed."
     }
 }
 
