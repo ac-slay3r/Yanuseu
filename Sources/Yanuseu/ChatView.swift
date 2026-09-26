@@ -17,6 +17,7 @@ struct ChatView: View {
     @AppStorage("provider.baseURL") private var baseURL = "https://api.openai.com/v1"
     @AppStorage("provider.model") private var model = ""
     @AppStorage("agent.calculator.enabled") private var calculatorEnabled = false
+    @AppStorage("agent.instructions") private var agentInstructions = ""
     @StateObject private var store = ConversationStore()
     @State private var draft = ""
     @State private var streamingText = ""
@@ -188,7 +189,7 @@ struct ChatView: View {
                     var responseText = ""
                     var toolFragments: [Int: ToolCallFragment] = [:]
                     let history = store.activeConversation.messages
-                    for try await event in ChatService.stream(messages: history, model: model, baseURL: baseURL, apiKey: apiKey, calculatorEnabled: calculatorEnabled) {
+                    for try await event in ChatService.stream(messages: history, model: model, baseURL: baseURL, apiKey: apiKey, calculatorEnabled: calculatorEnabled, instructions: agentInstructions) {
                         if Task.isCancelled { throw CancellationError() }
                         switch event {
                         case .text(let token):

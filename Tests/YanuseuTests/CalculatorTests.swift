@@ -58,12 +58,23 @@ final class CalculatorTests: XCTestCase {
         let disabledMessages = disabledPayload["messages"] as? [[String: Any]]
         XCTAssertTrue((disabledMessages?.first?["content"] as? String)?.contains("No agent tools are enabled") == true)
 
-        let enabledPayload = ChatService.requestPayload(messages: messages, model: "unit-test-model", calculatorEnabled: true)
+        let enabledPayload = ChatService.requestPayload(messages: messages, model: "unit-test-model", calculatorEnabled: true, instructions: "Use metric units")
+        let enabledMessages = enabledPayload["messages"] as? [[String: Any]]
+        XCTAssertTrue((enabledMessages?.first?["content"] as? String)?.contains("Use metric units") == true)
         let tools = enabledPayload["tools"] as? [[String: Any]]
         let function = tools?.first?["function"] as? [String: Any]
         XCTAssertEqual(tools?.count, 1)
         XCTAssertEqual(function?["name"] as? String, "calculator")
         XCTAssertEqual(enabledPayload["tool_choice"] as? String, "auto")
+    }
+
+    func testUserInstructionsAreCappedAtFourThousandCharacters() {
+        let messages = [ChatMessage(role: .user, content: "Hi")]
+        let payload = ChatService.requestPayload(messages: messages, model: "unit-test-model", calculatorEnabled: false, instructions: String(repeating: "x", count: 4_001))
+        let requestMessages = payload["messages"] as? [[String: Any]]
+        let system = requestMessages?.first?["content"] as? String ?? ""
+        XCTAssertTrue(system.contains(String(repeating: "x", count: 4_000)))
+        XCTAssertFalse(system.contains(String(repeating: "x", count: 4_001)))
     }
 
     func testToolExecutorRejectsOversizedMalformedAndOverlongArguments() {

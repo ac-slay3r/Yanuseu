@@ -16,6 +16,7 @@ struct ProviderSetupView: View {
     @State private var model = UserDefaults.standard.string(forKey: "provider.model") ?? ""
     @AppStorage("provider.isConfigured") private var isConfigured = false
     @AppStorage("agent.calculator.enabled") private var calculatorEnabled = false
+    @AppStorage("agent.instructions") private var agentInstructions = ""
     @State private var apiKey = ""
     @State private var isChecking = false
     @State private var statusMessage: String?
@@ -76,6 +77,26 @@ struct ProviderSetupView: View {
                 } footer: {
                     Text("Yanuseu sends chat messages to this provider. Conversation history stays on this iPhone unless you remove it.")
                     Text("Provider requests go directly to the HTTPS endpoint you enter; its operator controls any retention. Yanuseu does not add a relay or cloud history service. Review your provider’s policy before sending sensitive content.")
+                }
+
+                Section("Agent instructions") {
+                    TextEditor(text: $agentInstructions)
+                        .frame(minHeight: 100)
+                        .accessibilityLabel("Agent instructions")
+                        .onChange(of: agentInstructions) { _, newValue in
+                            if newValue.count > 4_000 {
+                                agentInstructions = String(newValue.prefix(4_000))
+                            }
+                        }
+                    HStack {
+                        Text("These instructions are sent to the configured provider with each chat request.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Text("\(agentInstructions.count)/4000")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("Agent controls") {
