@@ -50,6 +50,7 @@ final class ConversationStoreTests: XCTestCase {
         try store.archiveUnreadableHistoryAndReset()
         XCTAssertFalse(store.needsRecovery)
         XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(store.recoveredHistoryURL)), original)
+        XCTAssertEqual(ConversationStore(fileURL: file, defaults: defaults).recoveredHistoryURL, store.recoveredHistoryURL)
         XCTAssertTrue(try JSONDecoder().decode([Conversation].self, from: Data(contentsOf: file)).allSatisfy { $0.messages.isEmpty })
     }
 

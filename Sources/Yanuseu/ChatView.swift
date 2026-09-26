@@ -74,6 +74,13 @@ struct ChatView: View {
                                 .foregroundStyle(.orange)
                                 .padding(.horizontal)
                         }
+                        if let archive = store.recoveredHistoryURL, !store.needsRecovery {
+                            ShareLink(item: archive) {
+                                Label("Export archived unreadable history", systemImage: "square.and.arrow.up")
+                                    .font(.footnote)
+                            }
+                            .padding(.horizontal)
+                        }
                         if store.needsRecovery {
                             ContentUnavailableView("History needs attention", systemImage: "externaldrive.badge.exclamationmark", description: Text("The saved history could not be read. It will not be overwritten or sent to your provider."))
                                 .padding(.top, 40)

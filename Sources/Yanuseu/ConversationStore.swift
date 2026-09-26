@@ -12,11 +12,13 @@ final class ConversationStore: ObservableObject {
 
     private let fileURL: URL
     private let defaults: UserDefaults
+    private var pendingArchiveURL: URL?
 
     init(fileURL: URL? = nil, defaults: UserDefaults = .standard, profileID: String = ProfileStore.defaultID) {
         self.defaults = defaults
         self.selectedProfileID = profileID
         self.fileURL = fileURL ?? Self.defaultFileURL()
+        self.recoveredHistoryURL = Self.latestArchive(beside: self.fileURL)
         let loaded: [Conversation]
         let loadFailed: Bool
         do {
@@ -59,11 +61,15 @@ final class ConversationStore: ObservableObject {
     /// Only called after an explicit on-screen confirmation. Preserve the original bytes.
     func archiveUnreadableHistoryAndReset() throws {
         guard needsRecovery else { return }
-        if recoveredHistoryURL == nil {
+        if pendingArchiveURL == nil {
             let archive = fileURL.deletingLastPathComponent()
                 .appendingPathComponent(fileURL.lastPathComponent + ".unreadable-" + UUID().uuidString)
             try FileManager.default.moveItem(at: fileURL, to: archive)
+            pendingArchiveURL = archive
             recoveredHistoryURL = archive
+        }
+        if let archive = pendingArchiveURL {
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: archive.path)
         }
         needsRecovery = false
         conversations = [Conversation(profileID: selectedProfileID, title: "New conversation")]
@@ -179,6 +185,19 @@ final class ConversationStore: ObservableObject {
         let data = try Data(contentsOf: url)
         return try JSONDecoder().decode([Conversation].self, from: data)
             .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private static func latestArchive(beside url: URL) -> URL? {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: url.deletingLastPathComponent(),
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
+        return files.filter { $0.lastPathComponent.hasPrefix(url.lastPathComponent + ".unreadable-") }
+            .max { left, right in
+                let a = (try? left.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let b = (try? right.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return a < b
+            }
     }
 
     private static func defaultFileURL() -> URL {
