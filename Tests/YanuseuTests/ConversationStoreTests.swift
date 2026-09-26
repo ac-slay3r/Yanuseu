@@ -3,6 +3,70 @@ import XCTest
 
 @MainActor
 final class ConversationStoreTests: XCTestCase {
+    func testSearchFindsTitleAndMessageOnlyWithinSelectedProfileAndResumesAfterReload() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let file = directory.appendingPathComponent("history.json")
+        let suite = "YanuseuTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let store = ConversationStore(fileURL: file, defaults: defaults)
+        store.append(ChatMessage(role: .user, content: "Saturn rings"))
+        let saturnID = store.activeID
+        store.newConversation()
+        store.rename(store.activeID, to: "Jupiter notes")
+        XCTAssertEqual(store.search(" satURN ").map(\.id), [saturnID])
+        XCTAssertEqual(store.search("JUPITER").count, 1)
+        store.switchProfile("work")
+        store.append(ChatMessage(role: .user, content: "Saturn work"))
+        XCTAssertEqual(store.search("saturn").count, 1)
+        XCTAssertNotEqual(store.search("saturn").first?.id, saturnID)
+        store.switchProfile(ProfileStore.defaultID)
+        store.select(saturnID)
+        let restored = ConversationStore(fileURL: file, defaults: defaults)
+        XCTAssertEqual(restored.activeID, saturnID)
+        XCTAssertEqual(restored.activeConversation.messages.map(\.content), ["Saturn rings"])
+    }
+
+    func testUnreadableHistoryCannotBeOverwrittenUntilExplicitRecoveryAndOriginalIsArchived() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("history.json")
+        let original = Data("{broken history".utf8)
+        try original.write(to: file)
+        let suite = "YanuseuTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let store = ConversationStore(fileURL: file, defaults: defaults)
+        XCTAssertTrue(store.needsRecovery)
+        XCTAssertNotNil(store.persistenceError)
+        store.append(ChatMessage(role: .user, content: "Should not overwrite"))
+        XCTAssertEqual(try Data(contentsOf: file), original)
+        try store.archiveUnreadableHistoryAndReset()
+        XCTAssertFalse(store.needsRecovery)
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(store.recoveredHistoryURL)), original)
+        XCTAssertTrue(try JSONDecoder().decode([Conversation].self, from: Data(contentsOf: file)).allSatisfy { $0.messages.isEmpty })
+    }
+
+    func testLegacyJSONRemainsReadableAndSearchableAfterOpening() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("history.json")
+        let old = Conversation(title: "Original", messages: [ChatMessage(role: .user, content: "legacy comet")])
+        var dictionary = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
+        dictionary.removeValue(forKey: "profileID")
+        try JSONSerialization.data(withJSONObject: [dictionary]).write(to: file)
+        let store = ConversationStore(fileURL: file)
+        XCTAssertFalse(store.needsRecovery)
+        XCTAssertEqual(store.search("comet").first?.id, old.id)
+        XCTAssertEqual(store.activeConversation.profileID, ProfileStore.defaultID)
+    }
+
     func testProfilesCannotSelectOrClearEachOthersSessions() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let file = directory.appendingPathComponent("history.json")
