@@ -330,7 +330,16 @@ private struct ConversationListView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .swipeActions(edge: .trailing) {
+                        ShareLink(item: ConversationExporter.text(for: conversation), subject: Text(conversation.title)) {
+                            Label("Export", systemImage: "square.and.arrow.up")
+                        }
+                        .tint(.blue)
+                    }
                     .contextMenu {
+                        ShareLink(item: ConversationExporter.text(for: conversation), subject: Text(conversation.title)) {
+                            Label("Export Conversation", systemImage: "square.and.arrow.up")
+                        }
                         Button("Rename", systemImage: "pencil") { renameTarget = conversation; renameText = conversation.title }
                         Button("Delete", systemImage: "trash", role: .destructive) { deleteTarget = conversation }
                     }

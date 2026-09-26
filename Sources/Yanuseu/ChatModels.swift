@@ -41,3 +41,34 @@ struct Conversation: Identifiable, Codable, Equatable {
         }
     }
 }
+
+enum ConversationExporter {
+    static func text(for conversation: Conversation) -> String {
+        var lines = ["# \(conversation.title)"]
+        guard !conversation.messages.isEmpty else {
+            lines.append("")
+            lines.append("No messages in this conversation.")
+            return lines.joined(separator: "\n")
+        }
+
+        for message in conversation.messages {
+            let label: String
+            switch message.role {
+            case .user:
+                label = "User"
+            case .assistant:
+                label = "Yanuseu"
+            case .tool:
+                label = "Tool result (\(message.toolName ?? "unknown"))"
+            }
+            lines.append("")
+            lines.append("\(label): \(message.content)")
+            if let calls = message.toolCalls, !calls.isEmpty {
+                for call in calls {
+                    lines.append("Tool request (\(call.function.name)): \(call.function.arguments)")
+                }
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+}
