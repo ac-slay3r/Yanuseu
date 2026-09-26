@@ -3,7 +3,11 @@ import XCTest
 final class PrivacyManifestTests: XCTestCase {
     func testBundledPrivacyManifestDeclaresAppOnlyUserDefaultsAccess() throws {
         guard let url = Bundle.main.url(forResource: "PrivacyInfo", withExtension: "xcprivacy") else {
-            XCTFail("PrivacyInfo.xcprivacy is missing from the application bundle")
+            let appBundle = Bundle(identifier: "cool.n0thing.yanuseu")
+            let mainPath = Bundle.main.bundleURL.path
+            let appPath = appBundle?.bundleURL.path ?? "missing"
+            let appHasManifest = appBundle.map { FileManager.default.fileExists(atPath: $0.bundleURL.appendingPathComponent("PrivacyInfo.xcprivacy").path) } ?? false
+            XCTFail("PrivacyInfo.xcprivacy missing; main=\(Bundle.main.bundleIdentifier ?? "nil") at \(mainPath); app=\(appPath); appHasManifest=\(appHasManifest)")
             return
         }
         let data = try Data(contentsOf: url)
