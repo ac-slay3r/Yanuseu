@@ -19,6 +19,10 @@ struct ProviderSetupView: View {
     @AppStorage("agent.instructions") private var agentInstructions = ""
     @State private var apiKey = ""
     @State private var isChecking = false
+    @State private var isLoadingModels = false
+    @State private var availableModels: [String] = []
+    @State private var modelsStatus: String?
+    @State private var modelsLoadedSuccessfully = false
     @State private var statusMessage: String?
     @State private var didSucceed = false
     @State private var showRemoveConfirmation = false
@@ -29,7 +33,7 @@ struct ProviderSetupView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("Connect a model provider to get Yanuseu ready. The first setup check sends your API key to the endpoint you enter and requests the available-models list; it does not send a chat message.")
+                    Text("Connect a model provider to get Yanuseu ready. Testing the connection sends your API key to the endpoint you enter; it does not send a chat message.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } header: {
@@ -41,15 +45,43 @@ struct ProviderSetupView: View {
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .disabled(isLoadingModels || isChecking)
                         .accessibilityIdentifier("providerBaseURL")
+                        .onChange(of: baseURL) { _, _ in resetLoadedModels() }
                     TextField("Model ID from your provider", text: $model)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .disabled(isLoadingModels || isChecking)
                         .accessibilityIdentifier("providerModel")
+                    Button {
+                        Task { await loadAvailableModels() }
+                    } label: {
+                        Label(isLoadingModels ? "Loading models…" : "Load available models", systemImage: "arrow.down.circle")
+                    }
+                    .disabled(isLoadingModels || isChecking)
+                    .accessibilityIdentifier("loadProviderModels")
+                    .accessibilityLabel("Load available model IDs")
+                    if !availableModels.isEmpty {
+                        Menu("Choose from loaded models") {
+                            ForEach(availableModels, id: \.self) { modelID in
+                                Button(modelID) { model = modelID }
+                            }
+                        }
+                    }
+                    if let modelsStatus {
+                        Text(modelsStatus)
+                            .font(.footnote)
+                            .foregroundStyle(modelsLoadedSuccessfully ? Color.secondary : Color.red)
+                    }
+                    Text("Loading the list sends your API key to this provider endpoint. Model IDs remain editable if your provider does not list them.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     SecureField(credentials.containsAPIKey() ? "Enter API key to replace saved key" : "API key", text: $apiKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .disabled(isLoadingModels || isChecking)
                         .accessibilityIdentifier("providerAPIKey")
+                        .onChange(of: apiKey) { _, _ in resetLoadedModels() }
                     Text("The API key is stored in iPhone Keychain, not in app preferences.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -66,7 +98,7 @@ struct ProviderSetupView: View {
                             Spacer()
                         }
                     }
-                    .disabled(isChecking)
+                    .disabled(isChecking || isLoadingModels)
                     .accessibilityIdentifier("testAndSaveProvider")
                     if let statusMessage {
                         Text(statusMessage)
@@ -134,6 +166,43 @@ struct ProviderSetupView: View {
                 }
             }
         }
+    }
+
+    @MainActor
+    private func loadAvailableModels() async {
+        guard !isLoadingModels && !isChecking else { return }
+        let enteredKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key: String
+        if enteredKey.isEmpty {
+            guard let savedKey = credentials.loadAPIKey() else {
+                modelsLoadedSuccessfully = false
+                modelsStatus = "Enter an API key, or save one first, to load model IDs."
+                return
+            }
+            key = savedKey
+        } else {
+            key = enteredKey
+        }
+        isLoadingModels = true
+        modelsStatus = nil
+        modelsLoadedSuccessfully = false
+        defer { isLoadingModels = false }
+        do {
+            availableModels = try await ProviderConfiguration.fetchModelIDs(baseURL: baseURL, apiKey: key)
+            modelsLoadedSuccessfully = true
+            modelsStatus = availableModels.isEmpty
+                ? "No model IDs were listed. You can still enter one manually."
+                : "Loaded \(availableModels.count) model IDs. Choose one or enter an ID manually."
+        } catch {
+            availableModels = []
+            modelsStatus = error.localizedDescription
+        }
+    }
+
+    private func resetLoadedModels() {
+        availableModels = []
+        modelsStatus = nil
+        modelsLoadedSuccessfully = false
     }
 
     private func removeSavedProvider() {
