@@ -4,7 +4,7 @@ Yanuseu is a standalone iPhone AI-agent app: the agent loop runs in the app, tal
 
 ## Current status
 
-Early development. The first milestone is OpenAI-compatible provider setup, HTTPS connection verification, and Keychain credential storage. Chat and tool use are not implemented yet. The app is foreground-first: iOS may suspend it when backgrounded, so continuous background agent execution is out of scope.
+Early development. Implemented: provider setup and HTTPS connection check, streaming chat, stop/retry, and on-device conversation history. Safe agent tools and TestFlight distribution are still pending; simulator CI compiles the app and test bundles, but does not yet execute XCTest or replace on-device QA. The app is foreground-first: iOS may suspend it when backgrounded.
 
 ## Development
 

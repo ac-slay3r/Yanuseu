@@ -4,19 +4,22 @@ import SwiftUI
 struct YanuseuApp: App {
     var body: some Scene {
         WindowGroup {
-            ProviderSetupView()
+            AppRootView()
         }
     }
 }
 
-private struct ProviderSetupView: View {
+struct ProviderSetupView: View {
+    @Environment(\.dismiss) private var dismiss
+    var onConfigured: (() -> Void)? = nil
     @State private var baseURL = UserDefaults.standard.string(forKey: "provider.baseURL") ?? "https://api.openai.com/v1"
-    @State private var model = UserDefaults.standard.string(forKey: "provider.model") ?? "gpt-4o-mini"
+    @State private var model = UserDefaults.standard.string(forKey: "provider.model") ?? ""
     @AppStorage("provider.isConfigured") private var isConfigured = false
     @State private var apiKey = ""
     @State private var isChecking = false
     @State private var statusMessage: String?
     @State private var didSucceed = false
+    @State private var showRemoveConfirmation = false
 
     private let credentials = ProviderCredentialStore()
 
@@ -37,7 +40,7 @@ private struct ProviderSetupView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("providerBaseURL")
-                    TextField("Model ID", text: $model)
+                    TextField("Model ID from your provider", text: $model)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("providerModel")
@@ -70,7 +73,7 @@ private struct ProviderSetupView: View {
                             .accessibilityIdentifier("providerStatus")
                     }
                 } footer: {
-                    Text("Yanuseu currently supports OpenAI-compatible chat-completions providers. The agent chat experience is the next build step.")
+                    Text("Yanuseu sends chat messages to this provider. Conversation history stays on this iPhone unless you remove it.")
                 }
 
                 if isConfigured {
@@ -78,10 +81,40 @@ private struct ProviderSetupView: View {
                         Label("Provider connection verified", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                         LabeledContent("Model", value: model)
+                        Button("Remove saved provider key", role: .destructive) {
+                            showRemoveConfirmation = true
+                        }
+                    } footer: {
+                        Text("Removing the key also resets provider setup on this iPhone.")
                     }
                 }
             }
+            .confirmationDialog("Remove the saved provider key?", isPresented: $showRemoveConfirmation, titleVisibility: .visible) {
+                Button("Remove Key", role: .destructive, action: removeSavedProvider)
+                Button("Cancel", role: .cancel) {}
+            }
             .navigationTitle("Set up Yanuseu")
+            .toolbar {
+                if isConfigured {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+
+    private func removeSavedProvider() {
+        do {
+            try credentials.deleteAPIKey()
+            UserDefaults.standard.removeObject(forKey: "provider.baseURL")
+            UserDefaults.standard.removeObject(forKey: "provider.model")
+            isConfigured = false
+            statusMessage = nil
+            dismiss()
+        } catch {
+            statusMessage = error.localizedDescription
+            didSucceed = false
         }
     }
 
@@ -103,6 +136,7 @@ private struct ProviderSetupView: View {
             isConfigured = true
             didSucceed = true
             statusMessage = "Connection verified. Provider settings saved securely."
+            onConfigured?()
         } catch {
             statusMessage = error.localizedDescription
         }

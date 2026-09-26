@@ -7,9 +7,9 @@ final class ProviderConfigurationTests: XCTestCase {
         XCTAssertEqual(endpoint.absoluteString, "https://api.example.com/v1/models")
     }
 
-    func testModelsEndpointHandlesHostOnlyURL() throws {
-        let endpoint = try ProviderConfiguration.modelsEndpoint(from: "https://api.example.com")
-        XCTAssertEqual(endpoint.absoluteString, "https://api.example.com/models")
+    func testChatEndpointAppendsChatCompletionsToVersionedBaseURL() throws {
+        let endpoint = try ProviderConfiguration.chatCompletionsEndpoint(from: "https://api.example.com/v1")
+        XCTAssertEqual(endpoint.absoluteString, "https://api.example.com/v1/chat/completions")
     }
 
     func testModelsEndpointRejectsInsecureHTTP() {
@@ -18,6 +18,16 @@ final class ProviderConfigurationTests: XCTestCase {
 
     func testModelsEndpointRejectsCredentialsAndQueryInBaseURL() {
         XCTAssertThrowsError(try ProviderConfiguration.modelsEndpoint(from: "https://user:pass@api.example.com/v1?key=x"))
+    }
+
+    func testSSEParserExtractsContentDelta() {
+        let line = "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}"
+        XCTAssertEqual(ChatService.contentDelta(fromSSELine: line), "hello")
+    }
+
+    func testSSEParserIgnoresDoneMarkerAndNonDataLines() {
+        XCTAssertNil(ChatService.contentDelta(fromSSELine: "data: [DONE]"))
+        XCTAssertNil(ChatService.contentDelta(fromSSELine: "event: message"))
     }
 
     func testConnectionRejectsEmptyModelBeforeNetworkRequest() async {

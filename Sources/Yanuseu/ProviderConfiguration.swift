@@ -1,21 +1,7 @@
 import Foundation
 
+/// Validation and endpoint construction for OpenAI-compatible providers.
 enum ProviderConfiguration {
-    static func modelsEndpoint(from rawValue: String) throws -> URL {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard var components = URLComponents(string: trimmed),
-              components.scheme?.lowercased() == "https",
-              let host = components.host, !host.isEmpty,
-              components.user == nil, components.password == nil,
-              components.query == nil, components.fragment == nil else {
-            throw ProviderError.invalidEndpoint
-        }
-        let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        components.path = path.isEmpty ? "/models" : "/\(path)/models"
-        guard let endpoint = components.url else { throw ProviderError.invalidEndpoint }
-        return endpoint
-    }
-
     enum ProviderError: LocalizedError {
         case invalidEndpoint
         case emptyAPIKey
@@ -39,30 +25,49 @@ enum ProviderConfiguration {
         }
     }
 
+    static func modelsEndpoint(from rawValue: String) throws -> URL {
+        try endpoint(from: rawValue, suffix: "models")
+    }
+
+    static func chatCompletionsEndpoint(from rawValue: String) throws -> URL {
+        try endpoint(from: rawValue, suffix: "chat/completions")
+    }
+
+    private static func endpoint(from rawValue: String, suffix: String) throws -> URL {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: trimmed),
+              components.scheme?.lowercased() == "https",
+              let host = components.host, !host.isEmpty,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil else {
+            throw ProviderError.invalidEndpoint
+        }
+        let basePath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        components.path = "/" + [basePath, suffix].filter { !$0.isEmpty }.joined(separator: "/")
+        guard let endpoint = components.url else { throw ProviderError.invalidEndpoint }
+        return endpoint
+    }
+
     static func verifyConnection(baseURL: String, model: String, apiKey: String) async throws {
-        guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ProviderError.emptyAPIKey
-        }
-        guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw ProviderError.emptyModel
-        }
+        let cleanedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedKey.isEmpty else { throw ProviderError.emptyAPIKey }
+        guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ProviderError.emptyModel }
+
         let endpoint = try modelsEndpoint(from: baseURL)
         var request = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(cleanedKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = false
-        let session = URLSession(configuration: configuration, delegate: RedirectBlocker(), delegateQueue: nil)
+        let session = URLSession(configuration: configuration, delegate: ProviderRedirectBlocker(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
         do {
             let (_, response) = try await session.data(for: request)
             guard let response = response as? HTTPURLResponse else { throw ProviderError.network }
-            guard (200..<300).contains(response.statusCode) else {
-                throw ProviderError.rejected(status: response.statusCode)
-            }
+            guard (200..<300).contains(response.statusCode) else { throw ProviderError.rejected(status: response.statusCode) }
         } catch let error as ProviderError {
             throw error
         } catch {
@@ -71,7 +76,7 @@ enum ProviderConfiguration {
     }
 }
 
-private final class RedirectBlocker: NSObject, URLSessionTaskDelegate {
+private final class ProviderRedirectBlocker: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,

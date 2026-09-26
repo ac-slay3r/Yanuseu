@@ -22,6 +22,21 @@ struct ProviderCredentialStore {
         guard addStatus == errSecSuccess else { throw KeychainError(status: addStatus) }
     }
 
+    func loadAPIKey() -> String? {
+        var attributes = query
+        attributes[kSecReturnData as String] = true
+        attributes[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(attributes as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    func deleteAPIKey() throws {
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainError(status: status) }
+    }
+
     func containsAPIKey() -> Bool {
         var attributes = query
         attributes[kSecReturnData as String] = false
