@@ -13,7 +13,7 @@ struct AgentProfile: Identifiable, Codable, Equatable {
 
 @MainActor
 final class ProfileStore: ObservableObject {
-    static let defaultID = "default"
+    nonisolated static let defaultID = "default"
     static let storageKey = "profiles.v1"
     private struct Document: Codable {
         var version: Int
