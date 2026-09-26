@@ -13,6 +13,7 @@ enum AppCommand: Equatable {
     case clearConversation
     case tools
     case settings
+    case skills
     case unknown(String)
 
     static let registry: [CommandEntry] = [
@@ -20,7 +21,8 @@ enum AppCommand: Equatable {
         .init(name: "/new", summary: "Start a new conversation", command: .newConversation),
         .init(name: "/clear", summary: "Clear this conversation after confirmation", command: .clearConversation),
         .init(name: "/tools", summary: "Show local tool permissions", command: .tools),
-        .init(name: "/settings", summary: "Open provider and agent settings", command: .settings)
+        .init(name: "/settings", summary: "Open provider and agent settings", command: .settings),
+        .init(name: "/skills", summary: "Inspect and enable local skill instructions", command: .skills)
     ]
 
     static var helpText: String {
