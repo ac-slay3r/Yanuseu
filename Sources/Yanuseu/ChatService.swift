@@ -11,12 +11,12 @@ struct ChatService {
         }
     }
 
-    static func stream(messages: [ChatMessage], model: String, baseURL: String, apiKey: String, calculatorEnabled: Bool = false, instructions: String = "", skills: [String] = []) -> AsyncThrowingStream<ChatStreamEvent, Error> {
+    static func stream(messages: [ChatMessage], model: String, baseURL: String, apiKey: String, policy: ToolPolicy = ToolPolicy(), instructions: String = "", skills: [String] = []) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     let endpoint = try ProviderConfiguration.chatCompletionsEndpoint(from: baseURL)
-                    let payload = Self.requestPayload(messages: messages, model: model, calculatorEnabled: calculatorEnabled, instructions: instructions, skills: skills)
+                    let payload = Self.requestPayload(messages: messages, model: model, policy: policy, instructions: instructions, skills: skills)
                     var request = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 120)
                     request.httpMethod = "POST"
                     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -75,8 +75,8 @@ struct ChatService {
         return result
     }
 
-    private static func apiMessages(from messages: [ChatMessage], calculatorEnabled: Bool, instructions: String, skills: [String]) -> [[String: Any]] {
-        let toolGuidance = calculatorEnabled
+    private static func apiMessages(from messages: [ChatMessage], policy: ToolPolicy, instructions: String, skills: [String]) -> [[String: Any]] {
+        let toolGuidance = policy.allows(.calculator)
             ? "You may use one local tool named calculator for basic arithmetic. It evaluates arithmetic only and has no network, filesystem, or other side effects. Use the returned result accurately; never imply other tools or actions are available."
             : "No agent tools are enabled. Answer using the conversation only; do not claim to perform local actions or use tools."
         let cleanedInstructions = String(instructions.prefix(4_000)).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -112,33 +112,25 @@ struct ChatService {
     }
 
     static func requestPayload(messages: [ChatMessage], model: String, calculatorEnabled: Bool, instructions: String = "", skills: [String] = []) -> [String: Any] {
+        requestPayload(messages: messages, model: model, policy: ToolPolicy(calculatorEnabled: calculatorEnabled), instructions: instructions, skills: skills)
+    }
+
+    static func requestPayload(messages: [ChatMessage], model: String, policy: ToolPolicy, instructions: String = "", skills: [String] = []) -> [String: Any] {
         var payload: [String: Any] = [
             "model": model,
             "stream": true,
-            "messages": apiMessages(from: messages, calculatorEnabled: calculatorEnabled, instructions: instructions, skills: skills)
+            "messages": apiMessages(from: messages, policy: policy, instructions: instructions, skills: skills)
         ]
-        if calculatorEnabled {
-            payload["tools"] = availableTools(calculatorEnabled: true)
+        let schemas = ToolRegistry.schemas(for: policy)
+        if !schemas.isEmpty {
+            payload["tools"] = schemas
             payload["tool_choice"] = "auto"
         }
         return payload
     }
 
     static func availableTools(calculatorEnabled: Bool) -> [[String: Any]] {
-        guard calculatorEnabled else { return [] }
-        return [[
-            "type": "function",
-            "function": [
-                "name": "calculator",
-                "description": "Evaluate a basic arithmetic expression. Supports numbers, parentheses, +, -, *, and /.",
-                "parameters": [
-                    "type": "object",
-                    "properties": ["expression": ["type": "string", "description": "Arithmetic expression only"]],
-                    "required": ["expression"],
-                    "additionalProperties": false
-                ]
-            ]
-        ]]
+        ToolRegistry.schemas(for: ToolPolicy(calculatorEnabled: calculatorEnabled))
     }
 }
 

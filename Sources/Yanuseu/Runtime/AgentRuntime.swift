@@ -8,6 +8,7 @@ struct AgentTurnConfiguration {
     var calculatorEnabled: Bool
     var instructions: String
     var skillInstructions: [String] = []
+    var toolPolicy: ToolPolicy { ToolPolicy(calculatorEnabled: calculatorEnabled) }
 }
 
 protocol AgentProvider {
@@ -17,18 +18,18 @@ protocol AgentProvider {
 struct DirectAgentProvider: AgentProvider {
     func stream(messages: [ChatMessage], configuration: AgentTurnConfiguration) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         ChatService.stream(messages: messages, model: configuration.model, baseURL: configuration.baseURL,
-                           apiKey: configuration.apiKey, calculatorEnabled: configuration.calculatorEnabled,
+                           apiKey: configuration.apiKey, policy: configuration.toolPolicy,
                            instructions: configuration.instructions, skills: configuration.skillInstructions)
     }
 }
 
 protocol AgentTool {
-    func execute(_ call: ToolCall, calculatorEnabled: Bool) -> String
+    func execute(_ call: ToolCall, policy: ToolPolicy) -> String
 }
 
 struct NativeAgentTool: AgentTool {
-    func execute(_ call: ToolCall, calculatorEnabled: Bool) -> String {
-        ToolExecutor.execute(call, calculatorEnabled: calculatorEnabled)
+    func execute(_ call: ToolCall, policy: ToolPolicy) -> String {
+        ToolExecutor.execute(call, policy: policy)
     }
 }
 
@@ -119,9 +120,14 @@ struct AgentRuntime {
                 try Task.checkCancellation()
                 for (index, call) in calls.enumerated() {
                     try Task.checkCancellation()
-                    let result = index < 4
-                        ? tool.execute(call, calculatorEnabled: configuration.calculatorEnabled)
-                        : "Tool call limit reached; no action was taken."
+                    let result: String
+                    if index >= 4 {
+                        result = "Tool call limit reached; no action was taken."
+                    } else if let capability = ToolCapability(rawValue: call.function.name), configuration.toolPolicy.allows(capability) {
+                        result = tool.execute(call, policy: configuration.toolPolicy)
+                    } else {
+                        result = ToolExecutor.execute(call, policy: .init())
+                    }
                     let reply = ChatMessage(role: .tool, content: result, toolCallID: call.id, toolName: call.function.name)
                     history.append(reply)
                     try await onEvent(.message(reply))

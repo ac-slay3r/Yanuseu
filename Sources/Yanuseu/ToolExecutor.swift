@@ -2,15 +2,26 @@ import Foundation
 
 enum ToolExecutor {
     static func execute(_ call: ToolCall, calculatorEnabled: Bool) -> String {
+        execute(call, policy: ToolPolicy(calculatorEnabled: calculatorEnabled))
+    }
+
+    static func execute(_ call: ToolCall, policy: ToolPolicy) -> String {
+        guard let capability = ToolCapability(rawValue: call.function.name) else {
+            return "That tool is unavailable; no action was taken."
+        }
+        guard policy.allows(capability) else {
+            return "Calculator is disabled in Agent Controls; no calculation was run."
+        }
         guard call.function.arguments.utf8.count <= 1_024 else {
             return "Calculator arguments were too large; no calculation was run."
         }
-        guard call.function.name == "calculator" else {
-            return "That tool is unavailable; no action was taken."
+        switch capability {
+        case .calculator:
+            return executeCalculator(call)
         }
-        guard calculatorEnabled else {
-            return "Calculator is disabled in Agent Controls; no calculation was run."
-        }
+    }
+
+    private static func executeCalculator(_ call: ToolCall) -> String {
         guard let data = call.function.arguments.data(using: .utf8),
               let arguments = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let expression = arguments["expression"] as? String else {

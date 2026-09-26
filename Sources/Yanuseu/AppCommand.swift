@@ -20,7 +20,7 @@ enum AppCommand: Equatable {
         .init(name: "/help", summary: "List available native commands", command: .help),
         .init(name: "/new", summary: "Start a new conversation", command: .newConversation),
         .init(name: "/clear", summary: "Clear this conversation after confirmation", command: .clearConversation),
-        .init(name: "/tools", summary: "Show local tool permissions", command: .tools),
+        .init(name: "/tools", summary: "Control local tool permissions", command: .tools),
         .init(name: "/settings", summary: "Open provider and agent settings", command: .settings),
         .init(name: "/skills", summary: "Inspect and enable local skill instructions", command: .skills)
     ]

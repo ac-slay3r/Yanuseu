@@ -18,16 +18,16 @@ final class AgentRuntimeTests: XCTestCase {
     }
 
     private struct CalculatorTool: AgentTool {
-        func execute(_ call: ToolCall, calculatorEnabled: Bool) -> String {
-            ToolExecutor.execute(call, calculatorEnabled: calculatorEnabled)
+        func execute(_ call: ToolCall, policy: ToolPolicy) -> String {
+            ToolExecutor.execute(call, policy: policy)
         }
     }
 
     private final class CountingTool: AgentTool {
         var executed = 0
-        func execute(_ call: ToolCall, calculatorEnabled: Bool) -> String {
+        func execute(_ call: ToolCall, policy: ToolPolicy) -> String {
             executed += 1
-            return ToolExecutor.execute(call, calculatorEnabled: calculatorEnabled)
+            return ToolExecutor.execute(call, policy: policy)
         }
     }
 
@@ -86,9 +86,11 @@ final class AgentRuntimeTests: XCTestCase {
         var config = configuration
         config.calculatorEnabled = false
         var replies: [ChatMessage] = []
-        try await AgentRuntime(provider: provider).run(messages: [ChatMessage(role: .user, content: "Calculate")], configuration: config) { event in
+        let counter = CountingTool()
+        try await AgentRuntime(provider: provider, tool: counter).run(messages: [ChatMessage(role: .user, content: "Calculate")], configuration: config) { event in
             if case .message(let message) = event { replies.append(message) }
         }
+        XCTAssertEqual(counter.executed, 0)
         XCTAssertEqual(replies[1].role, .tool)
         XCTAssertTrue(replies[1].content.contains("disabled"))
         XCTAssertEqual(provider.requests.count, 2)
