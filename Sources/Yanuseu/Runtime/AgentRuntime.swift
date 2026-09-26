@@ -72,6 +72,7 @@ struct AgentRuntime {
              onEvent: @MainActor (AgentRuntimeEvent) async throws -> Void) async throws {
         var history = messages
         var partial = ""
+        var pendingCalls: [ToolCall] = []
         do {
             for round in 0..<4 {
                 try Task.checkCancellation()
@@ -112,6 +113,8 @@ struct AgentRuntime {
                 let assistant = ChatMessage(role: .assistant, content: partial, toolCalls: calls)
                 history.append(assistant)
                 try await onEvent(.message(assistant))
+                pendingCalls = calls
+                partial = ""
                 try Task.checkCancellation()
                 for (index, call) in calls.enumerated() {
                     try Task.checkCancellation()
@@ -121,9 +124,15 @@ struct AgentRuntime {
                     let reply = ChatMessage(role: .tool, content: result, toolCallID: call.id, toolName: call.function.name)
                     history.append(reply)
                     try await onEvent(.message(reply))
+                    pendingCalls.removeFirst()
                 }
             }
         } catch is CancellationError {
+            for call in pendingCalls {
+                let skipped = ChatMessage(role: .tool, content: "Tool skipped because the turn was stopped; no action was taken.",
+                                          toolCallID: call.id, toolName: call.function.name)
+                try await onEvent(.message(skipped))
+            }
             try await onEvent(.cancelled(partial))
         }
     }

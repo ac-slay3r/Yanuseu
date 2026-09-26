@@ -23,6 +23,14 @@ final class AgentRuntimeTests: XCTestCase {
         }
     }
 
+    private final class CountingTool: AgentTool {
+        var executed = 0
+        func execute(_ call: ToolCall, calculatorEnabled: Bool) -> String {
+            executed += 1
+            return ToolExecutor.execute(call, calculatorEnabled: calculatorEnabled)
+        }
+    }
+
     private let configuration = AgentTurnConfiguration(model: "example", baseURL: "https://example.com/v1", apiKey: "test", calculatorEnabled: true, instructions: "")
 
     func testStreamedToolResultContinuesWithOrderedContext() async throws {
@@ -96,6 +104,23 @@ final class AgentRuntimeTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func testCancelAfterPersistedToolCallPairsSkippedResult() async throws {
+        let provider = ScriptedProvider([[.toolCall(index: 0, id: "c", name: "calculator", arguments: "{\"expression\":\"2+3\"}"), .finished(nil)]])
+        let tool = CountingTool()
+        var messages: [ChatMessage] = []
+        try await AgentRuntime(provider: provider, tool: tool).run(messages: [ChatMessage(role: .user, content: "Calculate")], configuration: configuration) { event in
+            if case .message(let message) = event {
+                messages.append(message)
+                if message.toolCalls != nil { withUnsafeCurrentTask { $0?.cancel() } }
+            }
+        }
+        XCTAssertEqual(messages.map(\.role), [.assistant, .tool])
+        XCTAssertEqual(messages.last?.toolCallID, "c")
+        XCTAssertTrue(messages.last?.content.contains("skipped") == true)
+        XCTAssertEqual(tool.executed, 0)
+        XCTAssertEqual(provider.requests.count, 1)
     }
 
     func testCancelAfterFirstTokenKeepsPartialTextAndPreventsToolExecution() async throws {
