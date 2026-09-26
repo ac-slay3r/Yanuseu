@@ -45,6 +45,7 @@ struct AppRootView: View {
 struct ChatView: View {
     @ObservedObject var profiles: ProfileStore
     @StateObject private var store: ConversationStore
+    @StateObject private var skills = SkillStore()
     init(profiles: ProfileStore) {
         self.profiles = profiles
         _store = StateObject(wrappedValue: ConversationStore(profileID: profiles.selectedID))
@@ -55,6 +56,7 @@ struct ChatView: View {
     @State private var isSending = false
     @State private var showConversations = false
     @State private var showSettings = false
+    @State private var showSkills = false
     @State private var showCommands = false
     @State private var pendingPaletteCommand: AppCommand?
     @State private var showClearConfirmation = false
@@ -141,6 +143,9 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showSettings) {
                 ProviderSetupView(profiles: profiles)
+            }
+            .sheet(isPresented: $showSkills) {
+                SkillLibraryView(store: skills, profileID: profiles.selectedID)
             }
             .sheet(isPresented: $showCommands, onDismiss: {
                 if let command = pendingPaletteCommand {
@@ -277,6 +282,8 @@ struct ChatView: View {
             store.append(ChatMessage(role: .assistant, content: "Local tools: Calculator (\(calculatorStatus)). It only evaluates basic arithmetic. No shell, filesystem, network, or other-app tools are available."))
         case .settings:
             showSettings = true
+        case .skills:
+            showSkills = true
         case .unknown(let token):
             store.append(ChatMessage(role: .assistant, content: "Unknown command \(token). Use /help to see available native commands."))
         }
@@ -299,10 +306,14 @@ struct ChatView: View {
             requestError = "Conversation history could not be saved; no request was sent."
             return
         }
+        let skillInstructions: [String]
+        do { skillInstructions = try skills.instructions(for: profile.id) }
+        catch { requestError = error.localizedDescription; return }
         let conversationID = store.activeID
         let history = store.activeConversation.messages
         let configuration = AgentTurnConfiguration(model: profile.model, baseURL: profile.baseURL, apiKey: apiKey,
-                                                    calculatorEnabled: profile.calculatorEnabled, instructions: profile.instructions)
+                                                    calculatorEnabled: profile.calculatorEnabled, instructions: profile.instructions,
+                                                    skillInstructions: skillInstructions)
         isSending = true
         streamingText = ""
         requestTask = Task { @MainActor in
