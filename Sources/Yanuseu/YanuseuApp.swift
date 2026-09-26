@@ -11,12 +11,15 @@ struct YanuseuApp: App {
 
 struct ProviderSetupView: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject var profiles: ProfileStore
     var onConfigured: (() -> Void)? = nil
-    @State private var baseURL = UserDefaults.standard.string(forKey: "provider.baseURL") ?? "https://api.openai.com/v1"
-    @State private var model = UserDefaults.standard.string(forKey: "provider.model") ?? ""
-    @AppStorage("provider.isConfigured") private var isConfigured = false
-    @AppStorage("agent.calculator.enabled") private var calculatorEnabled = false
-    @AppStorage("agent.instructions") private var agentInstructions = ""
+    @State private var baseURL: String
+    @State private var model: String
+    @State private var calculatorEnabled: Bool
+    @State private var agentInstructions: String
+    @State private var newProfileName = ""
+    @State private var pendingProfileID: String?
+    @State private var showUnsavedControlsConfirmation = false
     @State private var apiKey = ""
     @State private var isChecking = false
     @State private var isLoadingModels = false
@@ -29,9 +32,61 @@ struct ProviderSetupView: View {
 
     private let credentials = ProviderCredentialStore()
 
+    init(profiles: ProfileStore, onConfigured: (() -> Void)? = nil) {
+        self.profiles = profiles
+        self.onConfigured = onConfigured
+        _baseURL = State(initialValue: profiles.selected.baseURL)
+        _model = State(initialValue: profiles.selected.model)
+        _agentInstructions = State(initialValue: profiles.selected.instructions)
+        _calculatorEnabled = State(initialValue: profiles.selected.calculatorEnabled)
+    }
+
+    private var hasUnsavedProviderFields: Bool {
+        baseURL != profiles.selected.baseURL || model != profiles.selected.model || !apiKey.isEmpty
+    }
+
+    private var hasUnsavedControls: Bool {
+        agentInstructions != profiles.selected.instructions || calculatorEnabled != profiles.selected.calculatorEnabled
+    }
+
+    private var hasUnsavedChanges: Bool { hasUnsavedProviderFields || hasUnsavedControls }
+
+    private func selectProfile(_ id: String) {
+        guard id != profiles.selectedID else { return }
+        if hasUnsavedChanges {
+            pendingProfileID = id
+            showUnsavedControlsConfirmation = true
+        } else {
+            profiles.select(id)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
+                Section("Local agent profile") {
+                    Picker("Active profile", selection: Binding(get: { profiles.selectedID }, set: selectProfile)) {
+                        ForEach(profiles.profiles) { profile in
+                            Text(profile.name).tag(profile.id)
+                        }
+                    }
+                    .disabled(isChecking || isLoadingModels)
+                    TextField("New profile name", text: $newProfileName)
+                        .disabled(isChecking || isLoadingModels)
+                    Button("Create and select profile") {
+                        profiles.create(name: newProfileName)
+                        newProfileName = ""
+                    }
+                    .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChecking || isLoadingModels || hasUnsavedChanges)
+                    if hasUnsavedChanges {
+                        Text("Save or discard changes before creating a profile.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if hasUnsavedChanges {
+                        Button("Discard edits for this profile", role: .destructive) { hydrateSelectedProfile() }
+                    }
+                    Text("Profiles keep separate provider settings, Keychain keys, instructions, and conversations. Only OpenAI-compatible HTTPS providers are supported here.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section {
                     Text("Connect a model provider to get Yanuseu ready. Testing the connection sends your API key to the endpoint you enter; it does not send a chat message.")
                         .font(.subheadline)
@@ -76,7 +131,7 @@ struct ProviderSetupView: View {
                     Text("Loading the list sends your API key to this provider endpoint. Model IDs remain editable if your provider does not list them.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    SecureField(credentials.containsAPIKey() ? "Enter API key to replace saved key" : "API key", text: $apiKey)
+                    SecureField(((try? credentials.containsAPIKey(profileID: profiles.selectedID)) ?? false) ? "Enter API key to replace saved key" : "API key", text: $apiKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .disabled(isLoadingModels || isChecking)
@@ -133,12 +188,18 @@ struct ProviderSetupView: View {
 
                 Section("Agent controls") {
                     Toggle("Calculator tool", isOn: $calculatorEnabled)
+                    Button("Save agent controls") {
+                        profiles.updateSettings(profileID: profiles.selectedID, instructions: agentInstructions,
+                                                calculatorEnabled: calculatorEnabled)
+                        didSucceed = true
+                        statusMessage = "Agent controls saved for \(profiles.selected.name)."
+                    }
                     Text("When enabled, Yanuseu may ask its local calculator to evaluate basic arithmetic. It cannot access files, the network, or other apps. This is off by default.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
 
-                if isConfigured {
+                if profiles.selected.isConfigured {
                     Section {
                         Label("Provider connection verified", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
@@ -153,18 +214,36 @@ struct ProviderSetupView: View {
                     }
                 }
             }
+            .confirmationDialog("Switch profiles with unsaved edits?", isPresented: $showUnsavedControlsConfirmation, titleVisibility: .visible) {
+                if !hasUnsavedProviderFields && hasUnsavedControls {
+                    Button("Save controls and switch") {
+                        guard let id = pendingProfileID else { return }
+                        profiles.updateSettings(profileID: profiles.selectedID, instructions: agentInstructions,
+                                                calculatorEnabled: calculatorEnabled)
+                        profiles.select(id)
+                        pendingProfileID = nil
+                    }
+                }
+                Button("Discard changes and switch", role: .destructive) {
+                    guard let id = pendingProfileID else { return }
+                    profiles.select(id)
+                    pendingProfileID = nil
+                }
+                Button("Keep editing", role: .cancel) { pendingProfileID = nil }
+            }
             .confirmationDialog("Remove the saved provider key?", isPresented: $showRemoveConfirmation, titleVisibility: .visible) {
                 Button("Remove Key", role: .destructive, action: removeSavedProvider)
                 Button("Cancel", role: .cancel) {}
             }
-            .navigationTitle(isConfigured ? "Settings" : "Set up Yanuseu")
+            .navigationTitle(profiles.selected.isConfigured ? "Settings" : "Set up Yanuseu")
             .toolbar {
-                if isConfigured {
+                if profiles.selected.isConfigured {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Done") { dismiss() }
                     }
                 }
             }
+            .onChange(of: profiles.selectedID) { _, _ in hydrateSelectedProfile() }
         }
     }
 
@@ -174,12 +253,17 @@ struct ProviderSetupView: View {
         let enteredKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let key: String
         if enteredKey.isEmpty {
-            guard let savedKey = credentials.loadAPIKey() else {
-                modelsLoadedSuccessfully = false
-                modelsStatus = "Enter an API key, or save one first, to load model IDs."
+            do {
+                guard let savedKey = try credentials.loadAPIKey(profileID: profiles.selectedID) else {
+                    modelsLoadedSuccessfully = false
+                    modelsStatus = "Enter an API key, or save one first, to load model IDs."
+                    return
+                }
+                key = savedKey
+            } catch {
+                modelsStatus = error.localizedDescription
                 return
             }
-            key = savedKey
         } else {
             key = enteredKey
         }
@@ -205,13 +289,23 @@ struct ProviderSetupView: View {
         modelsLoadedSuccessfully = false
     }
 
+    private func hydrateSelectedProfile() {
+        let profile = profiles.selected
+        baseURL = profile.baseURL
+        model = profile.model
+        agentInstructions = profile.instructions
+        calculatorEnabled = profile.calculatorEnabled
+        apiKey = ""
+        statusMessage = nil
+        resetLoadedModels()
+    }
+
     private func removeSavedProvider() {
         do {
-            try credentials.deleteAPIKey()
-            UserDefaults.standard.removeObject(forKey: "provider.baseURL")
-            UserDefaults.standard.removeObject(forKey: "provider.model")
-            isConfigured = false
+            try credentials.deleteAPIKey(profileID: profiles.selectedID)
+            profiles.resetProvider(profileID: profiles.selectedID)
             statusMessage = nil
+            onConfigured?()
             dismiss()
         } catch {
             statusMessage = error.localizedDescription
@@ -225,18 +319,27 @@ struct ProviderSetupView: View {
         statusMessage = nil
         didSucceed = false
         defer { isChecking = false }
-
+        let profileID = profiles.selectedID
         do {
-            try await ProviderConfiguration.verifyConnection(baseURL: baseURL, model: model, apiKey: apiKey)
-            try credentials.save(apiKey: apiKey)
+            let enteredKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key: String
+            if enteredKey.isEmpty {
+                guard let saved = try credentials.loadAPIKey(profileID: profileID) else {
+                    statusMessage = "Enter an API key for this profile."
+                    return
+                }
+                key = saved
+            } else { key = enteredKey }
+            try await ProviderConfiguration.verifyConnection(baseURL: baseURL, model: model, apiKey: key)
+            guard profiles.selectedID == profileID else { return }
+            try credentials.save(apiKey: key, profileID: profileID)
             baseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             model = model.trimmingCharacters(in: .whitespacesAndNewlines)
-            UserDefaults.standard.set(baseURL, forKey: "provider.baseURL")
-            UserDefaults.standard.set(model, forKey: "provider.model")
+            profiles.configure(profileID: profileID, baseURL: baseURL, model: model,
+                               instructions: agentInstructions, calculatorEnabled: calculatorEnabled)
             apiKey = ""
-            isConfigured = true
             didSucceed = true
-            statusMessage = "Connection verified. Provider settings saved securely."
+            statusMessage = "Connection verified for \(profiles.selected.name)."
             onConfigured?()
         } catch {
             statusMessage = error.localizedDescription

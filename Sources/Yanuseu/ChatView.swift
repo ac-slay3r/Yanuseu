@@ -1,25 +1,56 @@
 import SwiftUI
 
 struct AppRootView: View {
-    @AppStorage("provider.isConfigured") private var isConfigured = false
+    @StateObject private var profiles = ProfileStore()
+    @State private var hasKey = false
+    @State private var checked = false
+    @State private var credentialError: String?
     private let credentials = ProviderCredentialStore()
 
     var body: some View {
-        if isConfigured && credentials.containsAPIKey() {
-            ChatView()
-        } else {
-            ProviderSetupView()
+        Group {
+            if let credentialError {
+                VStack(spacing: 16) {
+                    Text(credentialError)
+                    Button("Retry Keychain Access") { refreshKey() }
+                }.padding()
+            } else if !checked {
+                ProgressView("Checking iPhone Keychain…")
+            } else if profiles.selected.isConfigured && hasKey {
+                ChatView(profiles: profiles)
+            } else {
+                ProviderSetupView(profiles: profiles, onConfigured: refreshKey)
+            }
+        }
+        .task {
+            do { try credentials.migrateLegacyDefault() }
+            catch { credentialError = error.localizedDescription; checked = true; return }
+            refreshKey()
+        }
+        .onChange(of: profiles.selectedID) { _, _ in refreshKey() }
+        .onChange(of: profiles.selected.isConfigured) { _, _ in refreshKey() }
+    }
+
+    private func refreshKey() {
+        checked = true
+        do {
+            hasKey = try credentials.containsAPIKey(profileID: profiles.selectedID)
+            credentialError = nil
+        } catch {
+            credentialError = error.localizedDescription
         }
     }
 }
 
 struct ChatView: View {
-    @AppStorage("provider.baseURL") private var baseURL = "https://api.openai.com/v1"
-    @AppStorage("provider.model") private var model = ""
-    @AppStorage("agent.calculator.enabled") private var calculatorEnabled = false
-    @AppStorage("agent.instructions") private var agentInstructions = ""
-    @StateObject private var store = ConversationStore()
-    @State private var draft = ""
+    @ObservedObject var profiles: ProfileStore
+    @StateObject private var store: ConversationStore
+    init(profiles: ProfileStore) {
+        self.profiles = profiles
+        _store = StateObject(wrappedValue: ConversationStore(profileID: profiles.selectedID))
+        _draft = State(initialValue: profiles.draft(for: profiles.selectedID))
+    }
+    @State private var draft: String
     @State private var streamingText = ""
     @State private var isSending = false
     @State private var showConversations = false
@@ -69,7 +100,7 @@ struct ChatView: View {
                 .onChange(of: streamingText) { _, _ in scrollToBottom(proxy) }
             }
             .safeAreaInset(edge: .bottom) { composer }
-            .navigationTitle(store.activeConversation.title)
+            .navigationTitle("\(profiles.selected.name) · \(store.activeConversation.title)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarLeading) {
@@ -90,7 +121,7 @@ struct ChatView: View {
                 ConversationListView(store: store)
             }
             .sheet(isPresented: $showSettings) {
-                ProviderSetupView()
+                ProviderSetupView(profiles: profiles)
             }
             .confirmationDialog("Clear this conversation?", isPresented: $showClearConfirmation, titleVisibility: .visible) {
                 Button("Clear This Conversation", role: .destructive) {
@@ -110,6 +141,14 @@ struct ChatView: View {
                 Text(requestError ?? "Check your provider configuration and connection.")
             }
         }
+        .onChange(of: profiles.selectedID) { oldID, id in
+            if !isSending {
+                profiles.saveDraft(draft, for: oldID)
+                draft = profiles.draft(for: id)
+                store.switchProfile(id)
+            }
+        }
+        .onChange(of: draft) { _, newValue in profiles.saveDraft(newValue, for: profiles.selectedID) }
     }
 
     private var composer: some View {
@@ -166,7 +205,7 @@ struct ChatView: View {
         case .clearConversation:
             showClearConfirmation = true
         case .tools:
-            let calculatorStatus = calculatorEnabled ? "enabled" : "disabled"
+            let calculatorStatus = profiles.selected.calculatorEnabled ? "enabled" : "disabled"
             store.append(ChatMessage(role: .assistant, content: "Local tools: Calculator (\(calculatorStatus)). It only evaluates basic arithmetic. No shell, filesystem, network, or other-app tools are available."))
         case .settings:
             showSettings = true
@@ -176,18 +215,35 @@ struct ChatView: View {
     }
 
     private func startRequest() {
-        guard let apiKey = credentials.loadAPIKey() else {
-            requestError = "Provider key is missing. Re-enter it in Provider Settings."
+        let profile = profiles.selected
+        let apiKey: String
+        do {
+            guard let value = try credentials.loadAPIKey(profileID: profile.id) else {
+                requestError = "Provider key is missing. Re-enter it in Provider Settings."
+                return
+            }
+            apiKey = value
+        } catch {
+            requestError = error.localizedDescription
             return
         }
+        guard store.persistenceError == nil else {
+            requestError = "Conversation history could not be saved; no request was sent."
+            return
+        }
+        let conversationID = store.activeID
+        let history = store.activeConversation.messages
+        let configuration = AgentTurnConfiguration(model: profile.model, baseURL: profile.baseURL, apiKey: apiKey,
+                                                    calculatorEnabled: profile.calculatorEnabled, instructions: profile.instructions)
         isSending = true
         streamingText = ""
-        let configuration = AgentTurnConfiguration(model: model, baseURL: baseURL, apiKey: apiKey,
-                                                    calculatorEnabled: calculatorEnabled, instructions: agentInstructions)
         requestTask = Task { @MainActor in
             defer { isSending = false; requestTask = nil; streamingText = "" }
             do {
-                try await AgentRuntime().run(messages: store.activeConversation.messages, configuration: configuration) { event in
+                try await AgentRuntime().run(messages: history, configuration: configuration) { event in
+                    guard store.activeID == conversationID && store.selectedProfileID == profile.id else {
+                        throw AgentRuntimeError.persistenceFailed
+                    }
                     switch event {
                     case .text(let text): streamingText = text
                     case .message(let message):
@@ -265,7 +321,7 @@ private struct ConversationListView: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(store.conversations) { conversation in
+                ForEach(store.visibleConversations) { conversation in
                     Button {
                         store.select(conversation.id)
                         dismiss()
