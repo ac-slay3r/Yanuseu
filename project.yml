@@ -17,10 +17,6 @@ targets:
     platform: iOS
     sources:
       - path: Sources/Yanuseu
-        excludes:
-          - PrivacyInfo.xcprivacy
-    resources:
-      - path: Sources/Yanuseu/PrivacyInfo.xcprivacy
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cool.n0thing.yanuseu
