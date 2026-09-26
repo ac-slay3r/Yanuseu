@@ -74,8 +74,25 @@ final class ProfileStore: ObservableObject {
         persist()
     }
 
-    func removeKeyStatus() {
-        guard let index = profiles.firstIndex(where: { $0.id == selectedID }) else { return }
+    func updateSettings(profileID: String, instructions: String, calculatorEnabled: Bool) {
+        guard let index = profiles.firstIndex(where: { $0.id == profileID }) else { return }
+        profiles[index].instructions = String(instructions.prefix(4_000))
+        profiles[index].calculatorEnabled = calculatorEnabled
+        persist()
+    }
+
+    func configure(profileID: String, baseURL: String, model: String, instructions: String, calculatorEnabled: Bool) {
+        guard let index = profiles.firstIndex(where: { $0.id == profileID }) else { return }
+        profiles[index].baseURL = baseURL
+        profiles[index].model = model
+        profiles[index].instructions = String(instructions.prefix(4_000))
+        profiles[index].calculatorEnabled = calculatorEnabled
+        profiles[index].isConfigured = true
+        persist()
+    }
+
+    func resetProvider(profileID: String) {
+        guard let index = profiles.firstIndex(where: { $0.id == profileID }) else { return }
         profiles[index].isConfigured = false
         persist()
     }
