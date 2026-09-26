@@ -54,7 +54,7 @@ final class AgentRuntimeTests: XCTestCase {
     }
 
     func testPersistenceFailureBeforeToolExecutionStopsTurn() async {
-        let provider = ScriptedProvider([[.toolCall(index: 0, id: "c", name: "calculator", arguments: "{\"expression\":\"2+3\"}"), .finished(nil)])
+        let provider = ScriptedProvider([[.toolCall(index: 0, id: "c", name: "calculator", arguments: "{\"expression\":\"2+3\"}"), .finished(nil)]])
         let runtime = AgentRuntime(provider: provider, tool: CalculatorTool())
         do {
             try await runtime.run(messages: [ChatMessage(role: .user, content: "Calculate")], configuration: configuration) { event in
@@ -87,7 +87,7 @@ final class AgentRuntimeTests: XCTestCase {
     }
 
     func testIncompleteToolCallFailsClosed() async {
-        let provider = ScriptedProvider([[.toolCall(index: 0, id: nil, name: "calculator", arguments: "{}"), .finished(nil)])
+        let provider = ScriptedProvider([[.toolCall(index: 0, id: nil, name: "calculator", arguments: "{}"), .finished(nil)]])
         do {
             try await AgentRuntime(provider: provider).run(messages: [ChatMessage(role: .user, content: "Calculate")], configuration: configuration) { _ in }
             XCTFail("Expected an incomplete-call error")
