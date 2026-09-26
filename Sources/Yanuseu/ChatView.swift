@@ -56,6 +56,8 @@ struct ChatView: View {
     @State private var showConversations = false
     @State private var showSettings = false
     @State private var showClearConfirmation = false
+    @State private var showRecoveryConfirmation = false
+    @State private var recoveryError: String?
     @State private var requestError: String?
     @State private var requestTask: Task<Void, Never>?
 
@@ -72,7 +74,19 @@ struct ChatView: View {
                                 .foregroundStyle(.orange)
                                 .padding(.horizontal)
                         }
-                        if store.activeConversation.messages.isEmpty && streamingText.isEmpty {
+                        ForEach(store.archivedHistoryURLs, id: \.self) { archive in
+                            ShareLink(item: archive) {
+                                Label("Export archive \(archive.lastPathComponent)", systemImage: "square.and.arrow.up")
+                                    .font(.footnote)
+                            }
+                            .padding(.horizontal)
+                        }
+                        if store.needsRecovery {
+                            ContentUnavailableView("History needs attention", systemImage: "externaldrive.badge.exclamationmark", description: Text("The saved history could not be read. It will not be overwritten or sent to your provider."))
+                                .padding(.top, 40)
+                            Button("Archive unreadable history and start fresh") { showRecoveryConfirmation = true }
+                                .padding(.horizontal)
+                        } else if store.activeConversation.messages.isEmpty && streamingText.isEmpty {
                             ContentUnavailableView("Start a conversation", systemImage: "bubble.left.and.bubble.right", description: Text("Messages go directly to your configured provider."))
                                 .padding(.top, 80)
                         }
@@ -105,10 +119,10 @@ struct ChatView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarLeading) {
                     Button { showConversations = true } label: { Image(systemName: "list.bullet") }
-                        .disabled(isSending)
+                        .disabled(isSending || store.needsRecovery)
                         .accessibilityLabel("Conversations")
                     Button { store.newConversation() } label: { Image(systemName: "square.and.pencil") }
-                        .disabled(isSending)
+                        .disabled(isSending || store.needsRecovery)
                         .accessibilityLabel("New conversation")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -122,6 +136,22 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showSettings) {
                 ProviderSetupView(profiles: profiles)
+            }
+            .confirmationDialog("Archive unreadable local history?", isPresented: $showRecoveryConfirmation, titleVisibility: .visible) {
+                Button("Archive and Start Fresh", role: .destructive) {
+                    do { try store.archiveUnreadableHistoryAndReset() }
+                    catch { recoveryError = error.localizedDescription }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The original bytes will be kept in the app’s local storage. This starts a new empty history; it does not repair the archived file.")
+            }
+            .alert("History recovery failed", isPresented: Binding(
+                get: { recoveryError != nil }, set: { if !$0 { recoveryError = nil } }
+            )) {
+                Button("OK") { recoveryError = nil }
+            } message: {
+                Text(recoveryError ?? "The original history has not been discarded.")
             }
             .confirmationDialog("Clear this conversation?", isPresented: $showClearConfirmation, titleVisibility: .visible) {
                 Button("Clear This Conversation", role: .destructive) {
@@ -158,7 +188,7 @@ struct ChatView: View {
                     .accessibilityHint("Type slash help to see native commands.")
                     .lineLimit(1...5)
                     .textFieldStyle(.roundedBorder)
-                    .disabled(isSending)
+                    .disabled(isSending || store.needsRecovery)
                     .accessibilityIdentifier("chatComposer")
                 if isSending {
                     Button(action: stopRequest) {
@@ -170,7 +200,7 @@ struct ChatView: View {
                     Button(action: send) {
                         Image(systemName: "arrow.up.circle.fill").font(.system(size: 30))
                     }
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(store.needsRecovery || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityLabel("Send message")
                 }
             }
@@ -185,7 +215,7 @@ struct ChatView: View {
 
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isSending else { return }
+        guard !text.isEmpty, !isSending, !store.needsRecovery else { return }
         draft = ""
         if let command = AppCommand.parse(text) {
             run(command)
@@ -317,11 +347,12 @@ private struct ConversationListView: View {
     @State private var renameText = ""
     @State private var deleteTarget: Conversation?
     @State private var confirmClearAll = false
+    @State private var searchText = ""
 
     var body: some View {
         NavigationStack {
             List {
-                ForEach(store.visibleConversations) { conversation in
+                ForEach(store.search(searchText)) { conversation in
                     Button {
                         store.select(conversation.id)
                         dismiss()
@@ -348,6 +379,12 @@ private struct ConversationListView: View {
                         Button("Rename", systemImage: "pencil") { renameTarget = conversation; renameText = conversation.title }
                         Button("Delete", systemImage: "trash", role: .destructive) { deleteTarget = conversation }
                     }
+                }
+            }
+            .searchable(text: $searchText, prompt: "Search sessions and messages")
+            .overlay {
+                if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && store.search(searchText).isEmpty {
+                    ContentUnavailableView.search(text: searchText)
                 }
             }
             .navigationTitle("Conversations")

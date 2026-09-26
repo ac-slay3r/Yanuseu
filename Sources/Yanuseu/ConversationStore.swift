@@ -7,15 +7,27 @@ final class ConversationStore: ObservableObject {
     @Published private(set) var activeID: UUID
     @Published private(set) var selectedProfileID: String
     @Published private(set) var persistenceError: String?
+    @Published private(set) var needsRecovery = false
+    @Published private(set) var recoveredHistoryURL: URL?
 
     private let fileURL: URL
     private let defaults: UserDefaults
+    private var pendingArchiveURL: URL?
 
     init(fileURL: URL? = nil, defaults: UserDefaults = .standard, profileID: String = ProfileStore.defaultID) {
         self.defaults = defaults
         self.selectedProfileID = profileID
         self.fileURL = fileURL ?? Self.defaultFileURL()
-        let loaded = Self.load(from: self.fileURL)
+        self.recoveredHistoryURL = Self.latestArchive(beside: self.fileURL)
+        let loaded: [Conversation]
+        let loadFailed: Bool
+        do {
+            loaded = try Self.load(from: self.fileURL)
+            loadFailed = false
+        } catch {
+            loaded = []
+            loadFailed = true
+        }
         let initial = loaded.isEmpty ? [Conversation(profileID: profileID, title: "New conversation")] : loaded
         self.conversations = initial.sorted { $0.updatedAt > $1.updatedAt }
         let activeForProfile = initial.filter { $0.profileID == profileID }
@@ -24,6 +36,10 @@ final class ConversationStore: ObservableObject {
             .flatMap(UUID.init(uuidString:))
         self.activeID = savedID.flatMap { id in activeForProfile.contains(where: { $0.id == id }) ? id : nil }
             ?? activeForProfile.first?.id ?? UUID()
+        if loadFailed {
+            needsRecovery = true
+            persistenceError = "Saved history could not be read. Nothing has been overwritten; archive it before starting fresh."
+        }
         if activeForProfile.isEmpty {
             let replacement = Conversation(id: activeID, profileID: profileID, title: "New conversation")
             conversations.insert(replacement, at: 0)
@@ -31,7 +47,48 @@ final class ConversationStore: ObservableObject {
         } else if loaded.isEmpty { persist() }
     }
 
+    var archivedHistoryURLs: [URL] { Self.archives(beside: fileURL) }
+
     var visibleConversations: [Conversation] { conversations.filter { $0.profileID == selectedProfileID } }
+
+    func search(_ query: String) -> [Conversation] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return visibleConversations }
+        return visibleConversations.filter { conversation in
+            conversation.title.localizedStandardContains(term) ||
+            conversation.messages.contains { $0.content.localizedStandardContains(term) }
+        }
+    }
+
+    /// Only called after an explicit on-screen confirmation. Preserve the original bytes.
+    func archiveUnreadableHistoryAndReset(protectArchive: ((URL) throws -> Void)? = nil) throws {
+        guard needsRecovery else { return }
+        if pendingArchiveURL == nil {
+            let archive = fileURL.deletingLastPathComponent()
+                .appendingPathComponent(fileURL.lastPathComponent + ".unreadable-" + UUID().uuidString)
+            try FileManager.default.moveItem(at: fileURL, to: archive)
+            pendingArchiveURL = archive
+            recoveredHistoryURL = archive
+        }
+        if let archive = pendingArchiveURL {
+            if let protectArchive { try protectArchive(archive) }
+            else { try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: archive.path) }
+        }
+        needsRecovery = false
+        conversations = [Conversation(profileID: selectedProfileID, title: "New conversation")]
+        activeID = conversations[0].id
+        persist()
+        if persistenceError != nil {
+            needsRecovery = true
+            throw ConversationRecoveryError.couldNotSave
+        }
+        defaults.set(activeID.uuidString, forKey: "conversation.activeID.\(selectedProfileID)")
+    }
+
+    enum ConversationRecoveryError: LocalizedError {
+        case couldNotSave
+        var errorDescription: String? { "The original history was archived, but a new history file could not be saved." }
+    }
 
     var activeConversation: Conversation {
         visibleConversations.first(where: { $0.id == activeID }) ?? Conversation(id: activeID, profileID: selectedProfileID, title: "New conversation")
@@ -110,6 +167,7 @@ final class ConversationStore: ObservableObject {
     }
 
     private func persist() {
+        guard !needsRecovery else { return }
         do {
             let parent = fileURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
@@ -125,10 +183,28 @@ final class ConversationStore: ObservableObject {
         }
     }
 
-    private static func load(from url: URL) -> [Conversation] {
-        guard let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode([Conversation].self, from: data) else { return [] }
-        return decoded.sorted { $0.updatedAt > $1.updatedAt }
+    private static func load(from url: URL) throws -> [Conversation] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode([Conversation].self, from: data)
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private static func latestArchive(beside url: URL) -> URL? { archives(beside: url).first }
+
+    private static func archives(beside url: URL) -> [URL] {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: url.deletingLastPathComponent(),
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey]
+        )) ?? []
+        return files.filter { candidate in
+            candidate.lastPathComponent.hasPrefix(url.lastPathComponent + ".unreadable-") &&
+            ((try? candidate.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false)
+        }.sorted { left, right in
+            let a = (try? left.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let b = (try? right.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return a == b ? left.lastPathComponent < right.lastPathComponent : a > b
+        }
     }
 
     private static func defaultFileURL() -> URL {
