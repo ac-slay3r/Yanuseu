@@ -1,0 +1,9 @@
+*.xcodeproj/
+DerivedData/
+.build/
+.swiftpm/
+.DS_Store
+.env
+*.mobileprovision
+*.p12
+AuthKey_*.p8
