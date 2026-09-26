@@ -1,7 +1,7 @@
 import XCTest
-@testable import Janus
+@testable import Yanuseu
 
-final class JanusTests: XCTestCase {
+final class YanuseuTests: XCTestCase {
     func testPlaceholderAppTargetLoads() {
         XCTAssertTrue(true)
     }
