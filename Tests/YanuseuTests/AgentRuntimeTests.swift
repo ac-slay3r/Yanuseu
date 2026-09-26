@@ -49,6 +49,51 @@ final class AgentRuntimeTests: XCTestCase {
         }
     }
 
+    func testPersistenceFailureBeforeToolExecutionStopsTurn() async {
+        let provider = ScriptedProvider([[.toolCall(index: 0, id: "c", name: "calculator", arguments: "{\"expression\":\"2+3\"}"), .finished]])
+        let runtime = AgentRuntime(provider: provider, tool: CalculatorTool())
+        do {
+            try await runtime.run(messages: [ChatMessage(role: .user, content: "Calculate")], configuration: configuration) { event in
+                if case .message(let message) = event, message.toolCalls != nil {
+                    throw AgentRuntimeError.persistenceFailed
+                }
+            }
+            XCTFail("Expected persistence failure")
+        } catch AgentRuntimeError.persistenceFailed {
+            XCTAssertEqual(provider.requests.count, 1)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testDisabledCalculatorNeverExecutes() async throws {
+        let provider = ScriptedProvider([
+            [.toolCall(index: 0, id: "c", name: "calculator", arguments: "{\"expression\":\"2+3\"}"), .finished],
+            [.text("Done"), .finished]
+        ])
+        var config = configuration
+        config.calculatorEnabled = false
+        var replies: [ChatMessage] = []
+        try await AgentRuntime(provider: provider).run(messages: [ChatMessage(role: .user, content: "Calculate")], configuration: config) { event in
+            if case .message(let message) = event { replies.append(message) }
+        }
+        XCTAssertEqual(replies[1].role, .tool)
+        XCTAssertTrue(replies[1].content.contains("disabled"))
+        XCTAssertEqual(provider.requests.count, 2)
+    }
+
+    func testIncompleteToolCallFailsClosed() async {
+        let provider = ScriptedProvider([[.toolCall(index: 0, id: nil, name: "calculator", arguments: "{}"), .finished]])
+        do {
+            try await AgentRuntime(provider: provider).run(messages: [ChatMessage(role: .user, content: "Calculate")], configuration: configuration) { _ in }
+            XCTFail("Expected an incomplete-call error")
+        } catch AgentRuntimeError.incompleteToolCall {
+            XCTAssertEqual(provider.requests.count, 1)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testCancelAfterFirstTokenKeepsPartialTextAndPreventsToolExecution() async throws {
         let provider = ScriptedProvider([[
             .text("Partial"), .toolCall(index: 0, id: "call-1", name: "calculator", arguments: "{\"expression\":\"2+3\"}"), .finished("tool_calls")

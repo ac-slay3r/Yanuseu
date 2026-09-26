@@ -1,0 +1,11 @@
+# M0: native foreground turn — source evidence and boundaries
+
+Hermes reference inspected: `NousResearch/hermes-agent` checkout `95f4b45c32b9a4ec1f4a794af54feb0c676c06c4` (2026-09-20). This is a narrow Swift compatibility implementation, not a Python runtime port or full Hermes tool catalog.
+
+- `agent/turn_context.py:803-812` starts from session history and appends the user's turn. Yanuseu's `ConversationStore` owns that history; the UI passes the current transcript to `AgentRuntime`.
+- `agent/conversation_loop.py:1390-1409,1479-1521` iterates provider responses, branching to a tool round or final text. `agent/turn_tool_round.py:96-152,178-214` records an assistant tool-call message before tool execution, emits paired tool results, then continues inference. The Swift runtime mirrors that ordering with an explicit persistence check at the UI boundary before executing the sole available tool.
+- `agent/chat_completion_helpers.py:2621-2685,2685-3134` assembles streamed tool-call fragments by index/ID before dispatch. Yanuseu assembles ID, name, and JSON argument fragments and refuses incomplete calls; it currently supports only OpenAI-compatible Chat Completions through the existing `ChatService`.
+- `agent/interrupt_control.py:93-196` distinguishes explicit hard stop from other turn controls. Yanuseu's Stop cancels the foreground Swift task; the runtime checks cancellation before dispatching tools and retains partial text. Redirect, steering, retry/fallback, compression, and desktop callbacks are not in M0.
+- `agent/anthropic_message_convert.py:443-501,519-568` adapts tool results and adjacent roles for Anthropic. Yanuseu does **not** claim Anthropic Messages support: the supported inference wire is the configured OpenAI-compatible HTTPS endpoint.
+
+Only a user-enabled calculator can execute; unsupported or disabled tool names return a non-executing result. The runtime caps rounds and tool count. API credentials remain in iOS Keychain through `ProviderCredentialStore`, transcript data in protected app storage. There is no shell, arbitrary filesystem access, desktop host, gateway, background execution, or on-device inference in M0. Physical-device/provider-live verification is separate from simulator tests.
