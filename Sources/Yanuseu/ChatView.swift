@@ -16,12 +16,14 @@ struct AppRootView: View {
 struct ChatView: View {
     @AppStorage("provider.baseURL") private var baseURL = "https://api.openai.com/v1"
     @AppStorage("provider.model") private var model = ""
+    @AppStorage("agent.calculator.enabled") private var calculatorEnabled = false
     @StateObject private var store = ConversationStore()
     @State private var draft = ""
     @State private var streamingText = ""
     @State private var isSending = false
     @State private var showConversations = false
     @State private var showSettings = false
+    @State private var showClearConfirmation = false
     @State private var requestError: String?
     @State private var requestTask: Task<Void, Never>?
 
@@ -80,7 +82,7 @@ struct ChatView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                         .disabled(isSending)
-                        .accessibilityLabel("Provider settings")
+                        .accessibilityLabel("Settings")
                 }
             }
             .sheet(isPresented: $showConversations) {
@@ -88,6 +90,14 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showSettings) {
                 ProviderSetupView()
+            }
+            .confirmationDialog("Clear this conversation?", isPresented: $showClearConfirmation, titleVisibility: .visible) {
+                Button("Clear This Conversation", role: .destructive) {
+                    store.clearActiveConversation()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes only the current conversation from this iPhone. Other conversations are unchanged.")
             }
             .alert("Couldn’t get a response", isPresented: Binding(
                 get: { requestError != nil },
@@ -104,7 +114,8 @@ struct ChatView: View {
     private var composer: some View {
         VStack(spacing: 4) {
             HStack(alignment: .bottom, spacing: 10) {
-                TextField("Message Yanuseu", text: $draft, axis: .vertical)
+                TextField("Message Yanuseu or type /help", text: $draft, axis: .vertical)
+                    .accessibilityHint("Type slash help to see native commands.")
                     .lineLimit(1...5)
                     .textFieldStyle(.roundedBorder)
                     .disabled(isSending)
@@ -135,9 +146,32 @@ struct ChatView: View {
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isSending else { return }
-        store.append(ChatMessage(role: .user, content: text))
         draft = ""
+        if let command = AppCommand.parse(text) {
+            run(command)
+            return
+        }
+        store.append(ChatMessage(role: .user, content: text))
         startRequest()
+    }
+
+    private func run(_ command: AppCommand) {
+        switch command {
+        case .help:
+            store.append(ChatMessage(role: .assistant, content: "Native commands:\n/help — list commands\n/new — start a conversation\n/clear — clear this conversation (asks first)\n/tools — show enabled local tools\n/settings — open provider and agent settings"))
+        case .newConversation:
+            store.newConversation()
+            store.append(ChatMessage(role: .assistant, content: "Started a new conversation."))
+        case .clearConversation:
+            showClearConfirmation = true
+        case .tools:
+            let calculatorStatus = calculatorEnabled ? "enabled" : "disabled"
+            store.append(ChatMessage(role: .assistant, content: "Local tools: Calculator (\(calculatorStatus)). It only evaluates basic arithmetic. No shell, filesystem, network, or other-app tools are available."))
+        case .settings:
+            showSettings = true
+        case .unknown(let token):
+            store.append(ChatMessage(role: .assistant, content: "Unknown command \(token). Use /help to see available native commands."))
+        }
     }
 
     private func startRequest() {
@@ -154,7 +188,7 @@ struct ChatView: View {
                     var responseText = ""
                     var toolFragments: [Int: ToolCallFragment] = [:]
                     let history = store.activeConversation.messages
-                    for try await event in ChatService.stream(messages: history, model: model, baseURL: baseURL, apiKey: apiKey) {
+                    for try await event in ChatService.stream(messages: history, model: model, baseURL: baseURL, apiKey: apiKey, calculatorEnabled: calculatorEnabled) {
                         if Task.isCancelled { throw CancellationError() }
                         switch event {
                         case .text(let token):
@@ -192,7 +226,7 @@ struct ChatView: View {
                     store.append(ChatMessage(role: .assistant, content: responseText, toolCalls: calls))
                     for (index, call) in calls.enumerated() {
                         let result = index < 4
-                            ? ToolExecutor.execute(call)
+                            ? ToolExecutor.execute(call, calculatorEnabled: calculatorEnabled)
                             : "Tool call limit reached; no action was taken."
                         store.append(ChatMessage(role: .tool, content: result, toolCallID: call.id, toolName: call.function.name))
                     }

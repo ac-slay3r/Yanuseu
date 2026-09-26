@@ -11,18 +11,12 @@ struct ChatService {
         }
     }
 
-    static func stream(messages: [ChatMessage], model: String, baseURL: String, apiKey: String) -> AsyncThrowingStream<ChatStreamEvent, Error> {
+    static func stream(messages: [ChatMessage], model: String, baseURL: String, apiKey: String, calculatorEnabled: Bool = false) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     let endpoint = try ProviderConfiguration.chatCompletionsEndpoint(from: baseURL)
-                    let payload: [String: Any] = [
-                        "model": model,
-                        "stream": true,
-                        "messages": apiMessages(from: messages),
-                        "tools": calculatorTools,
-                        "tool_choice": "auto"
-                    ]
+                    let payload = Self.requestPayload(messages: messages, model: model, calculatorEnabled: calculatorEnabled)
                     var request = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 120)
                     request.httpMethod = "POST"
                     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -81,10 +75,13 @@ struct ChatService {
         return result
     }
 
-    private static func apiMessages(from messages: [ChatMessage]) -> [[String: Any]] {
+    private static func apiMessages(from messages: [ChatMessage], calculatorEnabled: Bool) -> [[String: Any]] {
+        let toolGuidance = calculatorEnabled
+            ? "You may use one local tool named calculator for basic arithmetic. It evaluates arithmetic only and has no network, filesystem, or other side effects. Use the returned result accurately; never imply other tools or actions are available."
+            : "No agent tools are enabled. Answer using the conversation only; do not claim to perform local actions or use tools."
         let systemMessage: [String: Any] = [
             "role": "system",
-            "content": "You may use one local tool named calculator for basic arithmetic. It evaluates arithmetic only and has no network, filesystem, or other side effects. Use the returned result accurately; never imply other tools or actions are available."
+            "content": toolGuidance
         ]
         var recent = Array(messages.suffix(40))
         while let first = recent.first, first.role != .user { recent.removeFirst() }
@@ -109,8 +106,22 @@ struct ChatService {
         return [systemMessage] + encoded
     }
 
-    private static var calculatorTools: [[String: Any]] {
-        [[
+    static func requestPayload(messages: [ChatMessage], model: String, calculatorEnabled: Bool) -> [String: Any] {
+        var payload: [String: Any] = [
+            "model": model,
+            "stream": true,
+            "messages": apiMessages(from: messages, calculatorEnabled: calculatorEnabled)
+        ]
+        if calculatorEnabled {
+            payload["tools"] = availableTools(calculatorEnabled: true)
+            payload["tool_choice"] = "auto"
+        }
+        return payload
+    }
+
+    static func availableTools(calculatorEnabled: Bool) -> [[String: Any]] {
+        guard calculatorEnabled else { return [] }
+        return [[
             "type": "function",
             "function": [
                 "name": "calculator",

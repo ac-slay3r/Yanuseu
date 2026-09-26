@@ -62,6 +62,12 @@ final class ConversationStore: ObservableObject {
         persist()
     }
 
+    func clearActiveConversation() {
+        guard let index = conversations.firstIndex(where: { $0.id == activeID }) else { return }
+        conversations[index] = Conversation(id: activeID, title: "New conversation")
+        persist()
+    }
+
     func delete(_ id: UUID) {
         conversations.removeAll { $0.id == id }
         if conversations.isEmpty { conversations = [Conversation(title: "New conversation")] }

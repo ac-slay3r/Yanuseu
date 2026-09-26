@@ -4,7 +4,7 @@ Yanuseu is a standalone iPhone AI-agent app: the agent loop runs in the app, tal
 
 ## Current status
 
-Early development. The current source includes provider setup and an HTTPS connection check; provider-backed streaming chat with stop/retry; on-device conversation history with deletion controls; and a calculator-only agent tool loop with bounded arithmetic parsing. The tool loop has no shell, filesystem, or network actions. GitHub Actions runs tests on an iOS Simulator; a green simulator run does not verify a live provider or physical-device behavior. The app is foreground-first: iOS may suspend it when backgrounded.
+Early development. The current source includes provider setup and an HTTPS connection check; provider-backed streaming chat with stop/retry; on-device conversation history with deletion controls; native slash commands (`/help`, `/new`, `/clear`, `/tools`, `/settings`); and a calculator-only agent tool loop that is off by default and can be enabled in Settings. The tool loop has no shell, filesystem, or network actions. GitHub Actions runs tests on an iOS Simulator; a green simulator run does not verify a live provider or physical-device behavior. The app is foreground-first: iOS may suspend it when backgrounded.
 
 ## Development
 

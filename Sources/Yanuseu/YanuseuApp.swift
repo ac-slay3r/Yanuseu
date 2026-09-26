@@ -15,6 +15,7 @@ struct ProviderSetupView: View {
     @State private var baseURL = UserDefaults.standard.string(forKey: "provider.baseURL") ?? "https://api.openai.com/v1"
     @State private var model = UserDefaults.standard.string(forKey: "provider.model") ?? ""
     @AppStorage("provider.isConfigured") private var isConfigured = false
+    @AppStorage("agent.calculator.enabled") private var calculatorEnabled = false
     @State private var apiKey = ""
     @State private var isChecking = false
     @State private var statusMessage: String?
@@ -77,6 +78,13 @@ struct ProviderSetupView: View {
                     Text("Provider requests go directly to the HTTPS endpoint you enter; its operator controls any retention. Yanuseu does not add a relay or cloud history service. Review your provider’s policy before sending sensitive content.")
                 }
 
+                Section("Agent controls") {
+                    Toggle("Calculator tool", isOn: $calculatorEnabled)
+                    Text("When enabled, Yanuseu may ask its local calculator to evaluate basic arithmetic. It cannot access files, the network, or other apps. This is off by default.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 if isConfigured {
                     Section {
                         Label("Provider connection verified", systemImage: "checkmark.circle.fill")
@@ -96,7 +104,7 @@ struct ProviderSetupView: View {
                 Button("Remove Key", role: .destructive, action: removeSavedProvider)
                 Button("Cancel", role: .cancel) {}
             }
-            .navigationTitle("Set up Yanuseu")
+            .navigationTitle(isConfigured ? "Settings" : "Set up Yanuseu")
             .toolbar {
                 if isConfigured {
                     ToolbarItem(placement: .topBarTrailing) {

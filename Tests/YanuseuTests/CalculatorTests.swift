@@ -41,24 +41,41 @@ final class CalculatorTests: XCTestCase {
         XCTAssertEqual(ChatService.events(fromSSELine: line), [.text("hello")])
     }
 
-    func testToolExecutorRunsOnlyTheAllowlistedCalculator() {
+    func testToolExecutorRunsCalculatorOnlyWhenEnabled() {
         let call = ToolCall(id: "call_1", function: .init(name: "calculator", arguments: "{\"expression\":\"2 + 3 * 4\"}"))
-        XCTAssertEqual(ToolExecutor.execute(call), "14")
+        XCTAssertEqual(ToolExecutor.execute(call, calculatorEnabled: true), "14")
+        XCTAssertEqual(ToolExecutor.execute(call, calculatorEnabled: false), "Calculator is disabled in Agent Controls; no calculation was run.")
 
         let unknown = ToolCall(id: "call_2", function: .init(name: "open_url", arguments: "{\"url\":\"https://example.com\"}"))
-        XCTAssertEqual(ToolExecutor.execute(unknown), "That tool is unavailable; no action was taken.")
+        XCTAssertEqual(ToolExecutor.execute(unknown, calculatorEnabled: true), "That tool is unavailable; no action was taken.")
+    }
+
+    func testCalculatorRequestIsIncludedOnlyWhenEnabled() {
+        let messages = [ChatMessage(role: .user, content: "What is 2 + 2?")]
+        let disabledPayload = ChatService.requestPayload(messages: messages, model: "unit-test-model", calculatorEnabled: false)
+        XCTAssertNil(disabledPayload["tools"])
+        XCTAssertNil(disabledPayload["tool_choice"])
+        let disabledMessages = disabledPayload["messages"] as? [[String: Any]]
+        XCTAssertTrue((disabledMessages?.first?["content"] as? String)?.contains("No agent tools are enabled") == true)
+
+        let enabledPayload = ChatService.requestPayload(messages: messages, model: "unit-test-model", calculatorEnabled: true)
+        let tools = enabledPayload["tools"] as? [[String: Any]]
+        let function = tools?.first?["function"] as? [String: Any]
+        XCTAssertEqual(tools?.count, 1)
+        XCTAssertEqual(function?["name"] as? String, "calculator")
+        XCTAssertEqual(enabledPayload["tool_choice"] as? String, "auto")
     }
 
     func testToolExecutorRejectsOversizedMalformedAndOverlongArguments() {
         let oversized = ToolCall(id: "call_large", function: .init(name: "calculator", arguments: String(repeating: " ", count: 1_025)))
-        XCTAssertEqual(ToolExecutor.execute(oversized), "Calculator arguments were too large; no calculation was run.")
+        XCTAssertEqual(ToolExecutor.execute(oversized, calculatorEnabled: true), "Calculator arguments were too large; no calculation was run.")
 
         let malformed = ToolCall(id: "call_bad", function: .init(name: "calculator", arguments: "not-json"))
-        XCTAssertEqual(ToolExecutor.execute(malformed), "The calculator requires a JSON string field named expression.")
+        XCTAssertEqual(ToolExecutor.execute(malformed, calculatorEnabled: true), "The calculator requires a JSON string field named expression.")
 
         let expression = String(repeating: "1", count: 257)
         let overlong = ToolCall(id: "call_long", function: .init(name: "calculator", arguments: "{\"expression\":\"\(expression)\"}"))
-        XCTAssertEqual(ToolExecutor.execute(overlong), "The calculator rejected that expression.")
+        XCTAssertEqual(ToolExecutor.execute(overlong, calculatorEnabled: true), "The calculator rejected that expression.")
     }
 
     private func makeSSE(_ payload: [String: Any]) throws -> String {
