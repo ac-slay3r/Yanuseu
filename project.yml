@@ -4,6 +4,9 @@ options:
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
+  fileTypes:
+    xcprivacy:
+      buildPhase: resources
 settings:
   base:
     SWIFT_VERSION: 5.9
