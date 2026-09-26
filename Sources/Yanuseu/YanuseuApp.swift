@@ -201,9 +201,9 @@ struct ProviderSetupView: View {
 
                 if profiles.selected.isConfigured {
                     Section {
-                        Label("Provider connection verified", systemImage: "checkmark.circle.fill")
+                        Label("Saved provider connection verified", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                        LabeledContent("Model", value: model)
+                        LabeledContent("Saved model", value: profiles.selected.model)
                         Button("Remove saved provider key", role: .destructive) {
                             showRemoveConfirmation = true
                         }
