@@ -55,6 +55,8 @@ struct ChatView: View {
     @State private var isSending = false
     @State private var showConversations = false
     @State private var showSettings = false
+    @State private var showCommands = false
+    @State private var pendingPaletteCommand: AppCommand?
     @State private var showClearConfirmation = false
     @State private var showRecoveryConfirmation = false
     @State private var recoveryError: String?
@@ -125,7 +127,10 @@ struct ChatView: View {
                         .disabled(isSending || store.needsRecovery)
                         .accessibilityLabel("New conversation")
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { showCommands = true } label: { Image(systemName: "command") }
+                        .disabled(isSending || store.needsRecovery)
+                        .accessibilityLabel("Commands")
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                         .disabled(isSending)
                         .accessibilityLabel("Settings")
@@ -136,6 +141,28 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showSettings) {
                 ProviderSetupView(profiles: profiles)
+            }
+            .sheet(isPresented: $showCommands, onDismiss: {
+                if let command = pendingPaletteCommand {
+                    pendingPaletteCommand = nil
+                    run(command)
+                }
+            }) {
+                NavigationStack {
+                    List(AppCommand.registry) { entry in
+                        Button {
+                            pendingPaletteCommand = entry.command
+                            showCommands = false
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(entry.name).font(.headline)
+                                Text(entry.summary).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .navigationTitle("Commands")
+                    .toolbar { Button("Done") { showCommands = false } }
+                }
             }
             .confirmationDialog("Archive unreadable local history?", isPresented: $showRecoveryConfirmation, titleVisibility: .visible) {
                 Button("Archive and Start Fresh", role: .destructive) {
@@ -183,6 +210,17 @@ struct ChatView: View {
 
     private var composer: some View {
         VStack(spacing: 4) {
+            if !AppCommand.suggestions(for: draft).isEmpty {
+                ScrollView(.horizontal) {
+                    HStack {
+                        ForEach(AppCommand.suggestions(for: draft)) { entry in
+                            Button("\(entry.name) · \(entry.summary)") { draft = entry.name }
+                                .buttonStyle(.bordered)
+                        }
+                    }
+                }
+                .accessibilityLabel("Slash command suggestions")
+            }
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("Message Yanuseu or type /help", text: $draft, axis: .vertical)
                     .accessibilityHint("Type slash help to see native commands.")
@@ -228,7 +266,7 @@ struct ChatView: View {
     private func run(_ command: AppCommand) {
         switch command {
         case .help:
-            store.append(ChatMessage(role: .assistant, content: "Native commands:\n/help — list commands\n/new — start a conversation\n/clear — clear this conversation (asks first)\n/tools — show enabled local tools\n/settings — open provider and agent settings"))
+            store.append(ChatMessage(role: .assistant, content: AppCommand.helpText))
         case .newConversation:
             store.newConversation()
             store.append(ChatMessage(role: .assistant, content: "Started a new conversation."))
