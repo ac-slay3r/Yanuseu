@@ -56,6 +56,7 @@ struct ChatView: View {
     @State private var showConversations = false
     @State private var showSettings = false
     @State private var showCommands = false
+    @State private var pendingPaletteCommand: AppCommand?
     @State private var showClearConfirmation = false
     @State private var showRecoveryConfirmation = false
     @State private var recoveryError: String?
@@ -141,12 +142,17 @@ struct ChatView: View {
             .sheet(isPresented: $showSettings) {
                 ProviderSetupView(profiles: profiles)
             }
-            .sheet(isPresented: $showCommands) {
+            .sheet(isPresented: $showCommands, onDismiss: {
+                if let command = pendingPaletteCommand {
+                    pendingPaletteCommand = nil
+                    run(command)
+                }
+            }) {
                 NavigationStack {
                     List(AppCommand.registry) { entry in
                         Button {
+                            pendingPaletteCommand = entry.command
                             showCommands = false
-                            run(entry.command)
                         } label: {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(entry.name).font(.headline)
