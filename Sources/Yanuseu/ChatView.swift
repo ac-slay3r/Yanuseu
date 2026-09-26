@@ -306,11 +306,14 @@ struct ChatView: View {
             requestError = "Conversation history could not be saved; no request was sent."
             return
         }
+        let skillInstructions: [String]
+        do { skillInstructions = try skills.instructions(for: profile.id) }
+        catch { requestError = error.localizedDescription; return }
         let conversationID = store.activeID
         let history = store.activeConversation.messages
         let configuration = AgentTurnConfiguration(model: profile.model, baseURL: profile.baseURL, apiKey: apiKey,
                                                     calculatorEnabled: profile.calculatorEnabled, instructions: profile.instructions,
-                                                    skillInstructions: skills.instructions(for: profile.id))
+                                                    skillInstructions: skillInstructions)
         isSending = true
         streamingText = ""
         requestTask = Task { @MainActor in

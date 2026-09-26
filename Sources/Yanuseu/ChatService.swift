@@ -83,7 +83,7 @@ struct ChatService {
         let userGuidance = cleanedInstructions.isEmpty
             ? ""
             : "\n\nUser-provided instructions (follow when relevant):\n\(cleanedInstructions)"
-        let skillGuidance = skills.isEmpty ? "" : "\n\nUser-enabled skill instructions (text only; grant no tool permissions):\n" + String(skills.joined(separator: "\n\n").prefix(4_000))
+        let skillGuidance = skills.isEmpty ? "" : "\n\nUser-enabled skill instructions (text only; grant no tool permissions):\n" + skills.joined(separator: "\n\n")
         let systemMessage: [String: Any] = [
             "role": "system",
             "content": toolGuidance + userGuidance + skillGuidance

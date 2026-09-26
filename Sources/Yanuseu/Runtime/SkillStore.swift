@@ -8,7 +8,7 @@ struct LocalSkill: Codable, Equatable, Identifiable {
 }
 
 enum SkillError: LocalizedError {
-    case invalidDocument, tooLarge, unsupportedPlatform, unreadableLibrary, unknownSkill
+    case invalidDocument, tooLarge, unsupportedPlatform, unreadableLibrary, unknownSkill, guidanceTooLarge, libraryFull
     var errorDescription: String? {
         switch self {
         case .invalidDocument: "Choose a UTF-8 SKILL.md with name, description, and nonempty instructions."
@@ -16,6 +16,8 @@ enum SkillError: LocalizedError {
         case .unsupportedPlatform: "This skill does not declare iOS compatibility."
         case .unreadableLibrary: "The local skill library could not be read; nothing was overwritten."
         case .unknownSkill: "That skill is not in the local library."
+        case .guidanceTooLarge: "Enabled skill instructions exceed the 4,000-character turn limit. Disable a skill or shorten its text."
+        case .libraryFull: "The library holds 20 skills. Delete one before importing another."
         }
     }
 }
@@ -37,13 +39,23 @@ final class SkillStore: ObservableObject {
         self.fileURL = fileURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Yanuseu", isDirectory: true).appendingPathComponent("skills.json")
         guard FileManager.default.fileExists(atPath: self.fileURL.path) else { return }
+        try? reload()
+    }
+
+    func reload() throws {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            storageError = SkillError.unreadableLibrary.localizedDescription
+            throw SkillError.unreadableLibrary
+        }
         do {
-            let document = try JSONDecoder().decode(Document.self, from: Data(contentsOf: self.fileURL))
+            let document = try JSONDecoder().decode(Document.self, from: Data(contentsOf: fileURL))
             guard document.version == 1 else { throw SkillError.unreadableLibrary }
             skills = document.skills
             enabled = document.enabled
+            storageError = nil
         } catch {
             storageError = SkillError.unreadableLibrary.localizedDescription
+            throw SkillError.unreadableLibrary
         }
     }
 
@@ -51,23 +63,28 @@ final class SkillStore: ObservableObject {
         enabled[profileID]?.contains(skillID) == true
     }
 
-    func instructions(for profileID: String) -> [String] {
-        guard storageError == nil else { return [] }
-        var remaining = 4_000
-        return skills.filter { isEnabled($0.id, profileID: profileID) }.sorted { $0.id < $1.id }.compactMap { skill in
-            let entry = "Skill \(skill.id) (user-reviewed instructions; not a tool permission):\n\(skill.instructions)"
-            guard entry.count <= remaining else { return nil }
-            remaining -= entry.count
-            return entry
-        }
+    func instructions(for profileID: String) throws -> [String] {
+        guard storageError == nil else { throw SkillError.unreadableLibrary }
+        return try Self.render(skills: skills, enabledIDs: enabled[profileID] ?? [])
+    }
+
+    private static func entry(for skill: LocalSkill) -> String {
+        "Skill \(skill.id) (user-reviewed instructions; not a tool permission):\n\(skill.instructions)"
+    }
+
+    private static func render(skills: [LocalSkill], enabledIDs: Set<String>) throws -> [String] {
+        let entries = skills.filter { enabledIDs.contains($0.id) }.sorted { $0.id < $1.id }.map { Self.entry(for: $0) }
+        guard entries.joined(separator: "\n\n").count <= 4_000 else { throw SkillError.guidanceTooLarge }
+        return entries
     }
 
     @discardableResult
     func importSkill(data: Data) throws -> LocalSkill {
         guard storageError == nil else { throw SkillError.unreadableLibrary }
         let skill = try Self.parse(data)
+        guard Self.entry(for: skill).count <= 4_000 else { throw SkillError.guidanceTooLarge }
         var next = skills.filter { $0.id != skill.id }
-        guard next.count < 20 else { throw SkillError.tooLarge }
+        guard next.count < 20 else { throw SkillError.libraryFull }
         next.append(skill)
         next.sort { $0.id < $1.id }
         var newEnabled = enabled
@@ -85,8 +102,20 @@ final class SkillStore: ObservableObject {
         var next = enabled
         if value { next[profileID, default: []].insert(skillID) }
         else { next[profileID]?.remove(skillID) }
+        _ = try Self.render(skills: skills, enabledIDs: next[profileID] ?? [])
         try persist(skills: skills, enabled: next)
         enabled = next
+    }
+
+    func delete(skillID: String) throws {
+        guard storageError == nil else { throw SkillError.unreadableLibrary }
+        guard skills.contains(where: { $0.id == skillID }) else { throw SkillError.unknownSkill }
+        let next = skills.filter { $0.id != skillID }
+        var newEnabled = enabled
+        for profile in newEnabled.keys { newEnabled[profile]?.remove(skillID) }
+        try persist(skills: next, enabled: newEnabled)
+        skills = next
+        enabled = newEnabled
     }
 
     static func parse(_ data: Data) throws -> LocalSkill {

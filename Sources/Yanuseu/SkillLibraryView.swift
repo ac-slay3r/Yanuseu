@@ -6,6 +6,8 @@ struct SkillLibraryView: View {
     let profileID: String
     @Environment(\.dismiss) private var dismiss
     @State private var showImporter = false
+    @State private var isImporting = false
+    @State private var deleteTarget: LocalSkill?
     @State private var inspectedSkill: LocalSkill?
     @State private var errorMessage: String?
 
@@ -18,6 +20,10 @@ struct SkillLibraryView: View {
                     if let error = store.storageError {
                         Label(error, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.red)
+                        Button("Retry local library access") {
+                            do { try store.reload() }
+                            catch { errorMessage = error.localizedDescription }
+                        }
                     }
                 }
                 Section("Local library") {
@@ -42,7 +48,8 @@ struct SkillLibraryView: View {
                 }
                 Section {
                     Button("Import SKILL.md from Files") { showImporter = true }
-                        .disabled(store.storageError != nil)
+                        .disabled(store.storageError != nil || isImporting)
+                    if isImporting { ProgressView("Reading selected file…") }
                 } footer: {
                     Text("Text-only imports; no linked files, scripts, dependency installs, network access, or shell execution. Maximum 16 KB, 20 skills.")
                 }
@@ -53,11 +60,14 @@ struct SkillLibraryView: View {
                 do {
                     let url = try result.get()
                     guard url.lastPathComponent.lowercased() == "skill.md" else { throw SkillError.invalidDocument }
-                    let granted = url.startAccessingSecurityScopedResource()
-                    defer { if granted { url.stopAccessingSecurityScopedResource() } }
-                    guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize else { throw SkillError.invalidDocument }
-                    guard size <= 16_384 else { throw SkillError.tooLarge }
-                    inspectedSkill = try store.importSkill(data: Data(contentsOf: url))
+                    isImporting = true
+                    Task { @MainActor in
+                        defer { isImporting = false }
+                        do {
+                            let data = try await Task.detached(priority: .userInitiated) { try SkillFileReader.read(url) }.value
+                            inspectedSkill = try store.importSkill(data: data)
+                        } catch { errorMessage = error.localizedDescription }
+                    }
                 } catch {
                     errorMessage = error.localizedDescription
                 }
@@ -80,11 +90,25 @@ struct SkillLibraryView: View {
                                 }
                             ))
                             .disabled(store.storageError != nil)
+                            Button("Delete this skill from iPhone", role: .destructive) { deleteTarget = skill }
+                                .disabled(store.storageError != nil)
                         }
                         .padding()
                     }
                     .navigationTitle(skill.id)
                     .toolbar { Button("Done") { inspectedSkill = nil } }
+                    .confirmationDialog("Delete \(skill.id) from the local library?", isPresented: Binding(
+                        get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }
+                    ), titleVisibility: .visible) {
+                        Button("Delete Skill", role: .destructive) {
+                            do { try store.delete(skillID: skill.id); inspectedSkill = nil }
+                            catch { errorMessage = error.localizedDescription }
+                            deleteTarget = nil
+                        }
+                        Button("Cancel", role: .cancel) { deleteTarget = nil }
+                    } message: {
+                        Text("This removes the local instructions and disables them for every profile. Previous provider requests cannot be recalled.")
+                    }
                 }
             }
             .alert("Skill operation failed", isPresented: Binding(
