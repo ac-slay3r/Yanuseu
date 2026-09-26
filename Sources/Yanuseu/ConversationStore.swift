@@ -47,6 +47,8 @@ final class ConversationStore: ObservableObject {
         } else if loaded.isEmpty { persist() }
     }
 
+    var archivedHistoryURLs: [URL] { Self.archives(beside: fileURL) }
+
     var visibleConversations: [Conversation] { conversations.filter { $0.profileID == selectedProfileID } }
 
     func search(_ query: String) -> [Conversation] {
@@ -59,7 +61,7 @@ final class ConversationStore: ObservableObject {
     }
 
     /// Only called after an explicit on-screen confirmation. Preserve the original bytes.
-    func archiveUnreadableHistoryAndReset() throws {
+    func archiveUnreadableHistoryAndReset(protectArchive: ((URL) throws -> Void)? = nil) throws {
         guard needsRecovery else { return }
         if pendingArchiveURL == nil {
             let archive = fileURL.deletingLastPathComponent()
@@ -69,7 +71,8 @@ final class ConversationStore: ObservableObject {
             recoveredHistoryURL = archive
         }
         if let archive = pendingArchiveURL {
-            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: archive.path)
+            if let protectArchive { try protectArchive(archive) }
+            else { try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: archive.path) }
         }
         needsRecovery = false
         conversations = [Conversation(profileID: selectedProfileID, title: "New conversation")]
@@ -187,17 +190,21 @@ final class ConversationStore: ObservableObject {
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    private static func latestArchive(beside url: URL) -> URL? {
+    private static func latestArchive(beside url: URL) -> URL? { archives(beside: url).first }
+
+    private static func archives(beside url: URL) -> [URL] {
         let files = (try? FileManager.default.contentsOfDirectory(
             at: url.deletingLastPathComponent(),
-            includingPropertiesForKeys: [.contentModificationDateKey]
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey]
         )) ?? []
-        return files.filter { $0.lastPathComponent.hasPrefix(url.lastPathComponent + ".unreadable-") }
-            .max { left, right in
-                let a = (try? left.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                let b = (try? right.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                return a < b
-            }
+        return files.filter { candidate in
+            candidate.lastPathComponent.hasPrefix(url.lastPathComponent + ".unreadable-") &&
+            ((try? candidate.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false)
+        }.sorted { left, right in
+            let a = (try? left.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let b = (try? right.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return a == b ? left.lastPathComponent < right.lastPathComponent : a > b
+        }
     }
 
     private static func defaultFileURL() -> URL {

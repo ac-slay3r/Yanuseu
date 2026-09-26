@@ -54,6 +54,30 @@ final class ConversationStoreTests: XCTestCase {
         XCTAssertTrue(try JSONDecoder().decode([Conversation].self, from: Data(contentsOf: file)).allSatisfy { $0.messages.isEmpty })
     }
 
+    func testArchiveRemainsExportableIfResetFailsAfterMoveAndCanBeRetried() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("history.json")
+        let original = Data("{damaged".utf8)
+        try original.write(to: file)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ConversationStore(fileURL: file)
+        XCTAssertThrowsError(try store.archiveUnreadableHistoryAndReset(protectArchive: { _ in
+            throw CocoaError(.fileWriteNoPermission)
+        }))
+        XCTAssertTrue(store.needsRecovery)
+        XCTAssertEqual(store.archivedHistoryURLs.count, 1)
+        XCTAssertEqual(try Data(contentsOf: store.archivedHistoryURLs[0]), original)
+        try store.archiveUnreadableHistoryAndReset()
+        XCTAssertFalse(store.needsRecovery)
+        XCTAssertEqual(try Data(contentsOf: store.archivedHistoryURLs[0]), original)
+        try Data("{again".utf8).write(to: file)
+        let second = ConversationStore(fileURL: file)
+        try second.archiveUnreadableHistoryAndReset()
+        XCTAssertEqual(second.archivedHistoryURLs.count, 2)
+        XCTAssertTrue(second.archivedHistoryURLs.contains { (try? Data(contentsOf: $0)) == original })
+    }
+
     func testLegacyJSONRemainsReadableAndSearchableAfterOpening() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

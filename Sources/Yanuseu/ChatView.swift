@@ -74,9 +74,9 @@ struct ChatView: View {
                                 .foregroundStyle(.orange)
                                 .padding(.horizontal)
                         }
-                        if let archive = store.recoveredHistoryURL, !store.needsRecovery {
+                        ForEach(store.archivedHistoryURLs, id: \.self) { archive in
                             ShareLink(item: archive) {
-                                Label("Export archived unreadable history", systemImage: "square.and.arrow.up")
+                                Label("Export archive \(archive.lastPathComponent)", systemImage: "square.and.arrow.up")
                                     .font(.footnote)
                             }
                             .padding(.horizontal)
