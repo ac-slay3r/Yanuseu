@@ -41,7 +41,11 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertEqual(provider.requests[1][1].content, "Working ")
         XCTAssertEqual(provider.requests[1][2].toolCallID, "call-1")
         XCTAssertEqual(provider.requests[1][2].content, "5")
-        XCTAssertEqual(events.compactMap { if case .message(let message) = $0 { return message.role } else { return nil } }, [.assistant, .tool, .assistant])
+        let roles: [ChatMessage.Role] = events.compactMap { event in
+            if case .message(let message) = event { return message.role }
+            return nil
+        }
+        XCTAssertEqual(roles, [.assistant, .tool, .assistant])
         if case .message(let last)? = events.last {
             XCTAssertEqual(last.content, "Five.")
         } else {
@@ -50,7 +54,7 @@ final class AgentRuntimeTests: XCTestCase {
     }
 
     func testPersistenceFailureBeforeToolExecutionStopsTurn() async {
-        let provider = ScriptedProvider([[.toolCall(index: 0, id: "c", name: "calculator", arguments: "{\"expression\":\"2+3\"}"), .finished]])
+        let provider = ScriptedProvider([[.toolCall(index: 0, id: "c", name: "calculator", arguments: "{\"expression\":\"2+3\"}"), .finished(nil)])
         let runtime = AgentRuntime(provider: provider, tool: CalculatorTool())
         do {
             try await runtime.run(messages: [ChatMessage(role: .user, content: "Calculate")], configuration: configuration) { event in
@@ -68,8 +72,8 @@ final class AgentRuntimeTests: XCTestCase {
 
     func testDisabledCalculatorNeverExecutes() async throws {
         let provider = ScriptedProvider([
-            [.toolCall(index: 0, id: "c", name: "calculator", arguments: "{\"expression\":\"2+3\"}"), .finished],
-            [.text("Done"), .finished]
+            [.toolCall(index: 0, id: "c", name: "calculator", arguments: "{\"expression\":\"2+3\"}"), .finished(nil)],
+            [.text("Done"), .finished(nil)]
         ])
         var config = configuration
         config.calculatorEnabled = false
@@ -83,7 +87,7 @@ final class AgentRuntimeTests: XCTestCase {
     }
 
     func testIncompleteToolCallFailsClosed() async {
-        let provider = ScriptedProvider([[.toolCall(index: 0, id: nil, name: "calculator", arguments: "{}"), .finished]])
+        let provider = ScriptedProvider([[.toolCall(index: 0, id: nil, name: "calculator", arguments: "{}"), .finished(nil)])
         do {
             try await AgentRuntime(provider: provider).run(messages: [ChatMessage(role: .user, content: "Calculate")], configuration: configuration) { _ in }
             XCTFail("Expected an incomplete-call error")
