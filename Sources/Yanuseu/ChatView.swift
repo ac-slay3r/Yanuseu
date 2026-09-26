@@ -48,8 +48,9 @@ struct ChatView: View {
     init(profiles: ProfileStore) {
         self.profiles = profiles
         _store = StateObject(wrappedValue: ConversationStore(profileID: profiles.selectedID))
+        _draft = State(initialValue: profiles.draft(for: profiles.selectedID))
     }
-    @State private var draft = ""
+    @State private var draft: String
     @State private var streamingText = ""
     @State private var isSending = false
     @State private var showConversations = false
@@ -140,9 +141,14 @@ struct ChatView: View {
                 Text(requestError ?? "Check your provider configuration and connection.")
             }
         }
-        .onChange(of: profiles.selectedID) { _, id in
-            if !isSending { store.switchProfile(id) }
+        .onChange(of: profiles.selectedID) { oldID, id in
+            if !isSending {
+                profiles.saveDraft(draft, for: oldID)
+                draft = profiles.draft(for: id)
+                store.switchProfile(id)
+            }
         }
+        .onChange(of: draft) { _, newValue in profiles.saveDraft(newValue, for: profiles.selectedID) }
     }
 
     private var composer: some View {

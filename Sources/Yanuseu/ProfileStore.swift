@@ -24,6 +24,10 @@ final class ProfileStore: ObservableObject {
     @Published private(set) var profiles: [AgentProfile]
     @Published private(set) var selectedID: String
     private let defaults: UserDefaults
+    private var drafts: [String: String] = [:]
+
+    func draft(for profileID: String) -> String { drafts[profileID] ?? "" }
+    func saveDraft(_ text: String, for profileID: String) { drafts[profileID] = text }
 
     var selected: AgentProfile { profiles.first { $0.id == selectedID } ?? profiles[0] }
 

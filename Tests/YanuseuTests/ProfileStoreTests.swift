@@ -40,6 +40,18 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(ProfileStore(defaults: defaults).selected.id, second.id)
     }
 
+    func testDraftsStayMemoryOnlyAndNeverCrossProfiles() throws {
+        let defaults = try isolatedDefaults()
+        let store = ProfileStore(defaults: defaults)
+        let first = store.selectedID
+        store.saveDraft("Private draft", for: first)
+        let second = store.create(name: "Other")
+        XCTAssertEqual(store.draft(for: second.id), "")
+        store.saveDraft("Other draft", for: second.id)
+        XCTAssertEqual(store.draft(for: first), "Private draft")
+        XCTAssertEqual(ProfileStore(defaults: defaults).draft(for: first), "")
+    }
+
     func testSessionHistoryDoesNotCrossSelectedProfilesAndLegacyRemainsDefault() throws {
         let defaults = try isolatedDefaults()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

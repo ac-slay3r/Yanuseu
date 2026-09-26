@@ -18,6 +18,8 @@ struct ProviderSetupView: View {
     @State private var calculatorEnabled: Bool
     @State private var agentInstructions: String
     @State private var newProfileName = ""
+    @State private var pendingProfileID: String?
+    @State private var showUnsavedControlsConfirmation = false
     @State private var apiKey = ""
     @State private var isChecking = false
     @State private var isLoadingModels = false
@@ -39,11 +41,31 @@ struct ProviderSetupView: View {
         _calculatorEnabled = State(initialValue: profiles.selected.calculatorEnabled)
     }
 
+    private var hasUnsavedProviderFields: Bool {
+        baseURL != profiles.selected.baseURL || model != profiles.selected.model || !apiKey.isEmpty
+    }
+
+    private var hasUnsavedControls: Bool {
+        agentInstructions != profiles.selected.instructions || calculatorEnabled != profiles.selected.calculatorEnabled
+    }
+
+    private var hasUnsavedChanges: Bool { hasUnsavedProviderFields || hasUnsavedControls }
+
+    private func selectProfile(_ id: String) {
+        guard id != profiles.selectedID else { return }
+        if hasUnsavedChanges {
+            pendingProfileID = id
+            showUnsavedControlsConfirmation = true
+        } else {
+            profiles.select(id)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section("Local agent profile") {
-                    Picker("Active profile", selection: Binding(get: { profiles.selectedID }, set: { profiles.select($0) })) {
+                    Picker("Active profile", selection: Binding(get: { profiles.selectedID }, set: selectProfile)) {
                         ForEach(profiles.profiles) { profile in
                             Text(profile.name).tag(profile.id)
                         }
@@ -55,8 +77,14 @@ struct ProviderSetupView: View {
                         profiles.create(name: newProfileName)
                         newProfileName = ""
                     }
-                    .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChecking || isLoadingModels)
-                    Text("Profiles keep separate provider settings, Keychain keys, instructions and conversations. Only OpenAI-compatible HTTPS providers are supported here.")
+                    .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChecking || isLoadingModels || hasUnsavedChanges)
+                    if hasUnsavedChanges {
+                        Text("Save or discard changes before creating a profile.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if hasUnsavedChanges {
+                        Button("Discard edits for this profile", role: .destructive) { hydrateSelectedProfile() }
+                    }
+                    Text("Profiles keep separate provider settings, Keychain keys, instructions, and conversations. Only OpenAI-compatible HTTPS providers are supported here.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
@@ -185,6 +213,23 @@ struct ProviderSetupView: View {
                         Text("Removing the key also resets provider setup on this iPhone.")
                     }
                 }
+            }
+            .confirmationDialog("Switch profiles with unsaved edits?", isPresented: $showUnsavedControlsConfirmation, titleVisibility: .visible) {
+                if !hasUnsavedProviderFields && hasUnsavedControls {
+                    Button("Save controls and switch") {
+                        guard let id = pendingProfileID else { return }
+                        profiles.updateSettings(profileID: profiles.selectedID, instructions: agentInstructions,
+                                                calculatorEnabled: calculatorEnabled)
+                        profiles.select(id)
+                        pendingProfileID = nil
+                    }
+                }
+                Button("Discard changes and switch", role: .destructive) {
+                    guard let id = pendingProfileID else { return }
+                    profiles.select(id)
+                    pendingProfileID = nil
+                }
+                Button("Keep editing", role: .cancel) { pendingProfileID = nil }
             }
             .confirmationDialog("Remove the saved provider key?", isPresented: $showRemoveConfirmation, titleVisibility: .visible) {
                 Button("Remove Key", role: .destructive, action: removeSavedProvider)
