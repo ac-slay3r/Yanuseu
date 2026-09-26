@@ -22,12 +22,12 @@ final class ProviderConfigurationTests: XCTestCase {
 
     func testSSEParserExtractsContentDelta() {
         let line = "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}"
-        XCTAssertEqual(ChatService.contentDelta(fromSSELine: line), "hello")
+        XCTAssertEqual(ChatService.events(fromSSELine: line), [.text("hello")])
     }
 
     func testSSEParserIgnoresDoneMarkerAndNonDataLines() {
-        XCTAssertNil(ChatService.contentDelta(fromSSELine: "data: [DONE]"))
-        XCTAssertNil(ChatService.contentDelta(fromSSELine: "event: message"))
+        XCTAssertEqual(ChatService.events(fromSSELine: "data: [DONE]"), [.finished(nil)])
+        XCTAssertEqual(ChatService.events(fromSSELine: "event: message"), [])
     }
 
     func testConnectionRejectsEmptyModelBeforeNetworkRequest() async {
