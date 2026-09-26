@@ -1,6 +1,8 @@
-# Janus
+# Yanuseu
 
-Janus is a standalone iPhone AI-agent app: the agent loop runs in the app, talks directly to a model provider, and may optionally use on-device inference. It is designed not to require a VPS or companion computer.
+Yanuseu is a standalone iPhone AI-agent app: the agent loop runs in the app, talks directly to a model provider, and may optionally use on-device inference. It is designed not to require a VPS or companion computer.
+
+The Xcode project and public repository are currently named Janus; Yanuseu is the app name shown on iPhone and in App Store Connect.
 
 ## Current status
 
