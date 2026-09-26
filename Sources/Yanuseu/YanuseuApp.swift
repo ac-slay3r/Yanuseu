@@ -77,13 +77,15 @@ struct ProviderSetupView: View {
                 }
 
                 if isConfigured {
-                    Section("Saved setup") {
+                    Section {
                         Label("Provider connection verified", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                         LabeledContent("Model", value: model)
                         Button("Remove saved provider key", role: .destructive) {
                             showRemoveConfirmation = true
                         }
+                    } header: {
+                        Text("Saved setup")
                     } footer: {
                         Text("Removing the key also resets provider setup on this iPhone.")
                     }
