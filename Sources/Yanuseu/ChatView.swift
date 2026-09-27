@@ -46,6 +46,7 @@ struct ChatView: View {
     @ObservedObject var profiles: ProfileStore
     @StateObject private var store: ConversationStore
     @StateObject private var skills = SkillStore()
+    @StateObject private var memory = MemoryStore()
     init(profiles: ProfileStore) {
         self.profiles = profiles
         _store = StateObject(wrappedValue: ConversationStore(profileID: profiles.selectedID))
@@ -57,6 +58,7 @@ struct ChatView: View {
     @State private var showConversations = false
     @State private var showSettings = false
     @State private var showSkills = false
+    @State private var showMemory = false
     @State private var showTools = false
     @State private var showCommands = false
     @State private var pendingPaletteCommand: AppCommand?
@@ -147,6 +149,9 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showSkills) {
                 SkillLibraryView(store: skills, profileID: profiles.selectedID)
+            }
+            .sheet(isPresented: $showMemory) {
+                MemoryLibraryView(store: memory, profileID: profiles.selectedID)
             }
             .sheet(isPresented: $showTools) {
                 ToolControlsView(profiles: profiles, profileID: profiles.selectedID)
@@ -287,6 +292,8 @@ struct ChatView: View {
             showSettings = true
         case .skills:
             showSkills = true
+        case .memory:
+            showMemory = true
         case .unknown(let token):
             store.append(ChatMessage(role: .assistant, content: "Unknown command \(token). Use /help to see available native commands."))
         }
@@ -312,11 +319,14 @@ struct ChatView: View {
         let skillInstructions: [String]
         do { skillInstructions = try skills.instructions(for: profile.id) }
         catch { requestError = error.localizedDescription; return }
+        let memoryNotes: [String]
+        do { memoryNotes = try memory.context(for: profile.id) }
+        catch { requestError = error.localizedDescription; return }
         let conversationID = store.activeID
         let history = store.activeConversation.messages
         let configuration = AgentTurnConfiguration(model: profile.model, baseURL: profile.baseURL, apiKey: apiKey,
                                                     calculatorEnabled: profile.calculatorEnabled, instructions: profile.instructions,
-                                                    skillInstructions: skillInstructions)
+                                                    skillInstructions: skillInstructions, memoryNotes: memoryNotes)
         isSending = true
         streamingText = ""
         requestTask = Task { @MainActor in
@@ -400,11 +410,22 @@ private struct ConversationListView: View {
     @State private var deleteTarget: Conversation?
     @State private var confirmClearAll = false
     @State private var searchText = ""
+    @State private var showingArchived = false
+
+    private var sessions: [Conversation] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !showingArchived { return store.search(query) }
+        guard !query.isEmpty else { return store.archivedConversations }
+        return store.archivedConversations.filter { session in
+            session.title.localizedStandardContains(query) ||
+            session.messages.contains { $0.content.localizedStandardContains(query) }
+        }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                ForEach(store.search(searchText)) { conversation in
+                ForEach(sessions) { conversation in
                     Button {
                         store.select(conversation.id)
                         dismiss()
@@ -429,20 +450,28 @@ private struct ConversationListView: View {
                             Label("Export Conversation", systemImage: "square.and.arrow.up")
                         }
                         Button("Rename", systemImage: "pencil") { renameTarget = conversation; renameText = conversation.title }
+                        if conversation.isArchived {
+                            Button("Unarchive", systemImage: "archivebox.fill") { store.unarchive(conversation.id) }
+                        } else {
+                            Button("Archive", systemImage: "archivebox") { store.archive(conversation.id) }
+                        }
                         Button("Delete", systemImage: "trash", role: .destructive) { deleteTarget = conversation }
                     }
                 }
             }
             .searchable(text: $searchText, prompt: "Search sessions and messages")
             .overlay {
-                if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && store.search(searchText).isEmpty {
+                if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && sessions.isEmpty {
                     ContentUnavailableView.search(text: searchText)
                 }
             }
-            .navigationTitle("Conversations")
+            .navigationTitle(showingArchived ? "Archived Sessions" : "Conversations")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Menu {
+                        Button(showingArchived ? "Show Conversations" : "Show Archived Sessions", systemImage: "archivebox") {
+                            showingArchived.toggle()
+                        }
                         Button("Clear All Conversation History", systemImage: "trash", role: .destructive) {
                             confirmClearAll = true
                         }

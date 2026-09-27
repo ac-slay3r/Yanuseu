@@ -9,6 +9,7 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertEqual(AppCommand.parse("/tools"), .tools)
         XCTAssertEqual(AppCommand.parse("/settings"), .settings)
         XCTAssertEqual(AppCommand.parse("/skills"), .skills)
+        XCTAssertEqual(AppCommand.parse("/memory"), .memory)
     }
 
     func testCommandRegistryPowersHelpAndSlashSuggestions() {

@@ -19,6 +19,17 @@ final class ConversationStore: ObservableObject {
         self.selectedProfileID = profileID
         self.fileURL = fileURL ?? Self.defaultFileURL()
         self.recoveredHistoryURL = Self.latestArchive(beside: self.fileURL)
+        let marker = Self.recoveryMarker(beside: self.fileURL)
+        let missingAfterMove = !FileManager.default.fileExists(atPath: self.fileURL.path) &&
+            FileManager.default.fileExists(atPath: marker.path)
+        if missingAfterMove,
+           let name = try? String(contentsOf: marker, encoding: .utf8),
+           name.hasPrefix(self.fileURL.lastPathComponent + ".unreadable-"),
+           !name.contains("/"), !name.contains("\\"),
+           FileManager.default.fileExists(atPath: self.fileURL.deletingLastPathComponent().appendingPathComponent(name).path) {
+            self.pendingArchiveURL = self.fileURL.deletingLastPathComponent().appendingPathComponent(name)
+            self.recoveredHistoryURL = self.pendingArchiveURL
+        }
         let loaded: [Conversation]
         let loadFailed: Bool
         do {
@@ -30,26 +41,33 @@ final class ConversationStore: ObservableObject {
         }
         let initial = loaded.isEmpty ? [Conversation(profileID: profileID, title: "New conversation")] : loaded
         self.conversations = initial.sorted { $0.updatedAt > $1.updatedAt }
-        let activeForProfile = initial.filter { $0.profileID == profileID }
+        let activeForProfile = initial.filter { $0.profileID == profileID && !$0.isArchived }
         let savedID = (defaults.string(forKey: "conversation.activeID.\(profileID)") ??
                        (profileID == ProfileStore.defaultID ? defaults.string(forKey: "conversation.activeID") : nil))
             .flatMap(UUID.init(uuidString:))
         self.activeID = savedID.flatMap { id in activeForProfile.contains(where: { $0.id == id }) ? id : nil }
             ?? activeForProfile.first?.id ?? UUID()
-        if loadFailed {
+        if loadFailed || missingAfterMove {
             needsRecovery = true
-            persistenceError = "Saved history could not be read. Nothing has been overwritten; archive it before starting fresh."
+            persistenceError = missingAfterMove
+                ? "History recovery was interrupted. The archived history must be protected before starting fresh."
+                : "Saved history could not be read. Nothing has been overwritten; archive it before starting fresh."
         }
         if activeForProfile.isEmpty {
             let replacement = Conversation(id: activeID, profileID: profileID, title: "New conversation")
             conversations.insert(replacement, at: 0)
             persist()
         } else if loaded.isEmpty { persist() }
+        if !needsRecovery && FileManager.default.fileExists(atPath: marker.path) {
+            try? FileManager.default.removeItem(at: marker)
+        }
     }
 
     var archivedHistoryURLs: [URL] { Self.archives(beside: fileURL) }
 
-    var visibleConversations: [Conversation] { conversations.filter { $0.profileID == selectedProfileID } }
+    var visibleConversations: [Conversation] { conversations.filter { $0.profileID == selectedProfileID && !$0.isArchived } }
+
+    var archivedConversations: [Conversation] { conversations.filter { $0.profileID == selectedProfileID && $0.isArchived } }
 
     func search(_ query: String) -> [Conversation] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -64,8 +82,14 @@ final class ConversationStore: ObservableObject {
     func archiveUnreadableHistoryAndReset(protectArchive: ((URL) throws -> Void)? = nil) throws {
         guard needsRecovery else { return }
         if pendingArchiveURL == nil {
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                throw ConversationRecoveryError.missingArchive
+            }
             let archive = fileURL.deletingLastPathComponent()
                 .appendingPathComponent(fileURL.lastPathComponent + ".unreadable-" + UUID().uuidString)
+            try Data(archive.lastPathComponent.utf8).write(
+                to: Self.recoveryMarker(beside: fileURL), options: [.atomic, .completeFileProtection]
+            )
             try FileManager.default.moveItem(at: fileURL, to: archive)
             pendingArchiveURL = archive
             recoveredHistoryURL = archive
@@ -83,11 +107,18 @@ final class ConversationStore: ObservableObject {
             throw ConversationRecoveryError.couldNotSave
         }
         defaults.set(activeID.uuidString, forKey: "conversation.activeID.\(selectedProfileID)")
+        try? FileManager.default.removeItem(at: Self.recoveryMarker(beside: fileURL))
     }
 
     enum ConversationRecoveryError: LocalizedError {
         case couldNotSave
-        var errorDescription: String? { "The original history was archived, but a new history file could not be saved." }
+        case missingArchive
+        var errorDescription: String? {
+            switch self {
+            case .couldNotSave: "The original history was archived, but a new history file could not be saved."
+            case .missingArchive: "The pending history archive is missing. No new history was written."
+            }
+        }
     }
 
     var activeConversation: Conversation {
@@ -112,9 +143,34 @@ final class ConversationStore: ObservableObject {
     }
 
     func select(_ id: UUID) {
-        guard visibleConversations.contains(where: { $0.id == id }) else { return }
+        guard let index = conversations.firstIndex(where: { $0.id == id && $0.profileID == selectedProfileID }) else { return }
+        if conversations[index].isArchived {
+            conversations[index].isArchived = false
+            persist()
+        }
         activeID = id
         defaults.set(id.uuidString, forKey: "conversation.activeID.\(selectedProfileID)")
+    }
+
+    func archive(_ id: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == id && $0.profileID == selectedProfileID && !$0.isArchived }) else { return }
+        conversations[index].isArchived = true
+        if activeID == id {
+            if let next = visibleConversations.first { activeID = next.id }
+            else {
+                let replacement = Conversation(profileID: selectedProfileID, title: "New conversation")
+                conversations.insert(replacement, at: 0)
+                activeID = replacement.id
+            }
+            defaults.set(activeID.uuidString, forKey: "conversation.activeID.\(selectedProfileID)")
+        }
+        persist()
+    }
+
+    func unarchive(_ id: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == id && $0.profileID == selectedProfileID && $0.isArchived }) else { return }
+        conversations[index].isArchived = false
+        persist()
     }
 
     func newConversation() {
@@ -156,7 +212,7 @@ final class ConversationStore: ObservableObject {
     }
 
     func delete(_ id: UUID) {
-        guard visibleConversations.contains(where: { $0.id == id }) else { return }
+        guard conversations.contains(where: { $0.id == id && $0.profileID == selectedProfileID }) else { return }
         conversations.removeAll { $0.id == id }
         if visibleConversations.isEmpty { conversations.insert(Conversation(profileID: selectedProfileID, title: "New conversation"), at: 0) }
         if !visibleConversations.contains(where: { $0.id == activeID }) {
@@ -191,6 +247,10 @@ final class ConversationStore: ObservableObject {
     }
 
     private static func latestArchive(beside url: URL) -> URL? { archives(beside: url).first }
+
+    private static func recoveryMarker(beside url: URL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + ".recovery-pending")
+    }
 
     private static func archives(beside url: URL) -> [URL] {
         let files = (try? FileManager.default.contentsOfDirectory(
