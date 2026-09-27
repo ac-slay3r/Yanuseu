@@ -10,50 +10,57 @@ struct MemoryLibraryView: View {
     @State private var pendingDelete: LocalMemoryNote?
     @State private var error: String?
 
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Text("Notes you enter are stored on this iPhone for this profile. They are sent to your selected provider with future requests, including resumed sessions. Editing or deleting cannot retract prior requests or change a running turn or transcript. The agent does not save memories automatically.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                if let storageError = store.storageError {
-                    Section {
-                        Label(storageError, systemImage: "exclamationmark.triangle.fill")
-                        Button("Retry reading local memory") {
-                            do { try store.reload() } catch { error = error.localizedDescription }
-                        }
-                    }
-                } else {
-                    Section("Add a memory note") {
-                        TextField("What should Yanuseu remember?", text: $draft, axis: .vertical)
-                            .lineLimit(2...5)
-                            .accessibilityIdentifier("memoryDraft")
-                        Button("Save Note") {
-                            do { try store.add(draft, profileID: profileID); draft = "" }
-                            catch { error = error.localizedDescription }
-                        }
-                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                    Section("Saved for this profile") {
-                        ForEach(store.notes(for: profileID)) { note in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(note.text).textSelection(.enabled)
-                                Text("Added by you · \(note.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                HStack {
-                                    Button("Edit") { editText = note.text; editing = note }
-                                    Spacer()
-                                    Button("Delete", role: .destructive) { pendingDelete = note }
-                                }
-                            }
-                        }
-                        if store.notes(for: profileID).isEmpty {
-                            Text("No local memory notes yet.").foregroundStyle(.secondary)
-                        }
-                    }
+    private var notes: [LocalMemoryNote] { store.notes(for: profileID) }
+
+    @ViewBuilder
+    private var content: some View {
+        Section {
+            Text("Notes you enter are stored on this iPhone for this profile. They are sent to your selected provider with future requests, including resumed sessions. Editing or deleting cannot retract prior requests or change a running turn or transcript. The agent does not save memories automatically.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        if let storageError = store.storageError {
+            Section {
+                Label(storageError, systemImage: "exclamationmark.triangle.fill")
+                Button("Retry reading local memory") {
+                    do { try store.reload() } catch { error = error.localizedDescription }
                 }
             }
+        } else {
+            Section("Add a memory note") {
+                TextField("What should Yanuseu remember?", text: $draft, axis: .vertical)
+                    .lineLimit(2...5)
+                    .accessibilityIdentifier("memoryDraft")
+                Button("Save Note") { saveNote() }
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            Section("Saved for this profile") {
+                ForEach(notes) { note in noteRow(note) }
+                if notes.isEmpty { Text("No local memory notes yet.").foregroundStyle(.secondary) }
+            }
+        }
+    }
+
+    private func noteRow(_ note: LocalMemoryNote) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(note.text).textSelection(.enabled)
+            Text("Added by you · \(note.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("Edit") { editText = note.text; editing = note }
+                Spacer()
+                Button("Delete", role: .destructive) { pendingDelete = note }
+            }
+        }
+    }
+
+    private func saveNote() {
+        do { try store.add(draft, profileID: profileID); draft = "" }
+        catch { error = error.localizedDescription }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List { content }
             .navigationTitle("Local Memory")
             .toolbar { Button("Done") { dismiss() } }
             .alert("Edit memory note", isPresented: Binding(
