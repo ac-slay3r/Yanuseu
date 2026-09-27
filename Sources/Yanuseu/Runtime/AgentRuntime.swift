@@ -8,6 +8,7 @@ struct AgentTurnConfiguration {
     var calculatorEnabled: Bool
     var instructions: String
     var skillInstructions: [String] = []
+    var memoryNotes: [String] = []
     var toolPolicy: ToolPolicy { ToolPolicy(calculatorEnabled: calculatorEnabled) }
 }
 
@@ -19,7 +20,7 @@ struct DirectAgentProvider: AgentProvider {
     func stream(messages: [ChatMessage], configuration: AgentTurnConfiguration) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         ChatService.stream(messages: messages, model: configuration.model, baseURL: configuration.baseURL,
                            apiKey: configuration.apiKey, policy: configuration.toolPolicy,
-                           instructions: configuration.instructions, skills: configuration.skillInstructions)
+                           instructions: configuration.instructions, skills: configuration.skillInstructions, memory: configuration.memoryNotes)
     }
 }
 

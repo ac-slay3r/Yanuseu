@@ -1,4 +1,6 @@
 *.xcodeproj/
+__pycache__/
+*.pyc
 DerivedData/
 .build/
 .swiftpm/

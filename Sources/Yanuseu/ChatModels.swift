@@ -33,17 +33,19 @@ struct Conversation: Identifiable, Codable, Equatable {
     var title: String
     var messages: [ChatMessage] = []
     var updatedAt: Date = Date()
+    var isArchived: Bool = false
 
     init(id: UUID = UUID(), profileID: String = ProfileStore.defaultID, title: String,
-         messages: [ChatMessage] = [], updatedAt: Date = Date()) {
+         messages: [ChatMessage] = [], updatedAt: Date = Date(), isArchived: Bool = false) {
         self.id = id
         self.profileID = profileID
         self.title = title
         self.messages = messages
         self.updatedAt = updatedAt
+        self.isArchived = isArchived
     }
 
-    private enum CodingKeys: String, CodingKey { case id, profileID, title, messages, updatedAt }
+    private enum CodingKeys: String, CodingKey { case id, profileID, title, messages, updatedAt, isArchived }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -52,6 +54,7 @@ struct Conversation: Identifiable, Codable, Equatable {
         title = try container.decode(String.self, forKey: .title)
         messages = try container.decode([ChatMessage].self, forKey: .messages)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     }
 
     mutating func append(_ message: ChatMessage) {
