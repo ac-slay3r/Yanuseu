@@ -13,18 +13,22 @@ struct ToolControlsView: View {
                         .font(.footnote)
                 }
                 Section("This profile") {
-                    ForEach(ToolRegistry.descriptors) { tool in
-                        Toggle(isOn: binding(for: tool.capability)) {
-                            VStack(alignment: .leading) {
-                                Text(tool.title)
-                                Text(tool.detail).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
+                    ForEach(ToolRegistry.descriptions) { tool in
+                        toolRow(tool)
                     }
                 }
             }
             .navigationTitle("Local Tools")
             .toolbar { Button("Done") { dismiss() } }
+        }
+    }
+
+    private func toolRow(_ tool: NativeToolDescription) -> some View {
+        Toggle(isOn: binding(for: tool.capability)) {
+            VStack(alignment: .leading) {
+                Text(tool.title)
+                Text(tool.summary).font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 
