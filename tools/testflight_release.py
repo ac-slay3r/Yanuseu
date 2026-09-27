@@ -20,8 +20,8 @@ import urllib.parse
 import urllib.request
 import zipfile
 
-BUNDLE = 'cool.n0thing.yanuseu'
-TEAM = '2CH5J3W7UH'
+BUNDLE = 'cool.n0thing.yanus'
+TEAM = 'VYJS7JMXU5'
 REQUIRED_SECRETS = ('APP_DISTRIBUTION_P12_BASE64', 'APP_DISTRIBUTION_P12_PASSWORD',
                     'YANUSEU_APP_PROFILE_BASE64', 'ASC_API_KEY_ID',
                     'ASC_API_ISSUER_ID', 'ASC_API_PRIVATE_KEY_P8')

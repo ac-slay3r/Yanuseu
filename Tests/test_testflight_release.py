@@ -18,9 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestFlightReleaseSourceTests(unittest.TestCase):
-    def test_release_team_matches_yanuseu_account(self):
-        self.assertEqual(release.TEAM, '2CH5J3W7UH')
-        self.assertIn('DEVELOPMENT_TEAM=2CH5J3W7UH', (ROOT / '.github/workflows/testflight.yml').read_text())
+    def test_release_identity_matches_yanuseu_vyjs_account(self):
+        self.assertEqual(release.TEAM, 'VYJS7JMXU5')
+        self.assertEqual(release.BUNDLE, 'cool.n0thing.yanus')
+        self.assertIn('DEVELOPMENT_TEAM=VYJS7JMXU5', (ROOT / '.github/workflows/testflight.yml').read_text())
 
     def test_dispatch_is_manual_pinned_and_gated_before_signing(self):
         text = (ROOT / '.github/workflows/testflight.yml').read_text()
@@ -62,8 +63,9 @@ class TestFlightReleaseSourceTests(unittest.TestCase):
         text = (ROOT / 'project.yml').read_text()
         for token in ('MARKETING_VERSION:', 'CURRENT_PROJECT_VERSION:',
                       'CODE_SIGN_STYLE: Manual', 'archive:', 'config: Release',
-                      'PRODUCT_BUNDLE_IDENTIFIER: cool.n0thing.yanuseu'):
+                      'PRODUCT_BUNDLE_IDENTIFIER: cool.n0thing.yanus'):
             self.assertIn(token, text)
+        self.assertIn('PRODUCT_BUNDLE_IDENTIFIER: cool.n0thing.yanus.tests', text)
 
 
 class ReleaseValidationTests(unittest.TestCase):

@@ -1,6 +1,6 @@
 # Yanuseu
 
-Yanuseu is a standalone iPhone AI-agent app: the agent loop runs in the app, talks directly to a model provider, and may optionally use on-device inference. It is designed not to require a VPS or companion computer.
+Yanuseu is a standalone iPhone AI-agent app (Bundle ID `cool.n0thing.yanus`, Team `VYJS7JMXU5`): the agent loop runs in the app, talks directly to a model provider, and may optionally use on-device inference. It is designed not to require a VPS or companion computer. This new Bundle ID is a separate app installation; history and Keychain data from `cool.n0thing.yanuseu` are not automatically migrated.
 
 ## Current status
 
