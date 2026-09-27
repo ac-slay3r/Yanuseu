@@ -82,4 +82,19 @@ final class MemoryStoreTests: XCTestCase {
         XCTAssertThrowsError(try first.edit(try XCTUnwrap(first.notes.first).id, text: "Overwrite", profileID: "personal"))
         XCTAssertEqual(try Data(contentsOf: url), Data("corrupted".utf8))
     }
+
+    func testDocumentWideLimitCannotMakeAllProfilesUnreadableAfterRestart() throws {
+        let url = file()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = MemoryStore(fileURL: url)
+        for profile in 0..<10 {
+            for index in 0..<20 {
+                try store.add("Note \(index)", profileID: "profile-\(profile)")
+            }
+        }
+        XCTAssertThrowsError(try store.add("Overflow", profileID: "profile-10"))
+        let reloaded = MemoryStore(fileURL: url)
+        XCTAssertNil(reloaded.storageError)
+        XCTAssertEqual(reloaded.notes(for: "profile-0").count, 20)
+    }
 }

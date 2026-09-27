@@ -18,7 +18,7 @@ enum MemoryStoreError: LocalizedError {
         case .unreadable: "Local memory could not be read. Nothing was overwritten; restore the file and retry."
         case .invalidNote: "Enter a note of 1–2,000 characters."
         case .notFound: "That note does not belong to this profile."
-        case .full: "This profile has reached the 20-note limit."
+        case .full: "Memory is full (20 notes per profile, 200 total). Delete a note before adding another."
         case .contextTooLarge: "Memory exceeds the 3,000-character turn limit. Shorten or delete a note first."
         }
     }
@@ -75,6 +75,7 @@ final class MemoryStore: ObservableObject {
         guard !profileID.isEmpty else { throw MemoryStoreError.invalidNote }
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.valid(cleaned) else { throw MemoryStoreError.invalidNote }
+        guard notes.count < 200 else { throw MemoryStoreError.full }
         guard notes(for: profileID).count < 20 else { throw MemoryStoreError.full }
         let now = Date()
         let note = LocalMemoryNote(id: UUID(), profileID: profileID, text: cleaned,
