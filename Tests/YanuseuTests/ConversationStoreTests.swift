@@ -3,6 +3,23 @@ import XCTest
 
 @MainActor
 final class ConversationStoreTests: XCTestCase {
+    func testOrphanedSessionsRequireExplicitRecoveryIntoSelectedProfile() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("history.json")
+        let store = ConversationStore(fileURL: file)
+        store.switchProfile("lost-profile")
+        store.append(ChatMessage(role: .user, content: "Old profile only"))
+        let lost = store.activeID
+        store.switchProfile(ProfileStore.defaultID)
+        XCTAssertTrue(store.search("Old profile").isEmpty)
+        XCTAssertEqual(store.orphanedConversations(knownProfileIDs: [ProfileStore.defaultID]).map(\.id), [lost])
+        XCTAssertFalse(store.recoverOrphanedConversation(lost, knownProfileIDs: [ProfileStore.defaultID, "lost-profile"]))
+        XCTAssertTrue(store.recoverOrphanedConversation(lost, knownProfileIDs: [ProfileStore.defaultID]))
+        XCTAssertEqual(store.search("Old profile").map(\.id), [lost])
+        XCTAssertEqual(ConversationStore(fileURL: file).search("Old profile").map(\.id), [lost])
+    }
+
     func testFailedMessagePersistenceDoesNotConsumeOrDuplicateTheMessage() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data("not a directory".utf8).write(to: directory)

@@ -25,7 +25,13 @@ class TestFlightReleaseSourceTests(unittest.TestCase):
         self.assertRegex(text, r'actions/checkout@[0-9a-f]{40}')
         self.assertIn('gate-ci', text)
         self.assertIn('needs: gate-ci', text)
+        gate = text.split('  gate-ci:', 1)[1].split('  distribute:', 1)[0]
+        self.assertIn("if: github.ref == 'refs/heads/main'", gate)
+        self.assertNotIn('actions/checkout', gate)
+        self.assertNotIn('tools/testflight_release.py', gate)
+        self.assertIn("get('/git/ref/heads/main')", gate)
         self.assertIn('CODE_SIGNING_ALLOWED=NO', (ROOT / '.github/workflows/ios.yml').read_text())
+        self.assertIn("python3 -m unittest discover -s Tests -p 'test_*.py'", (ROOT / '.github/workflows/ios.yml').read_text())
         self.assertIn('gate-ci', (ROOT / 'tools/testflight_release.py').read_text())
         self.assertIn('head_sha', (ROOT / 'tools/testflight_release.py').read_text())
         self.assertIn('conclusion', (ROOT / 'tools/testflight_release.py').read_text())

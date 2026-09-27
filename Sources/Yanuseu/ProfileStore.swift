@@ -36,7 +36,7 @@ final class ProfileStore: ObservableObject {
 
     var archivedProfilesURLs: [URL] {
         (try? FileManager.default.contentsOfDirectory(at: archiveDirectory, includingPropertiesForKeys: nil))?
-            .filter { $0.lastPathComponent.hasPrefix("profiles.v1.unreadable-") && $0.pathExtension == "json" }
+            .filter { $0.lastPathComponent.hasPrefix("profiles.v1.unreadable-") && ["json", "plist"].contains($0.pathExtension) }
             .sorted { $0.lastPathComponent < $1.lastPathComponent } ?? []
     }
 
@@ -67,15 +67,25 @@ final class ProfileStore: ObservableObject {
     }
 
     func archiveUnreadableProfilesAndReset() throws -> URL {
-        guard storageError != nil, let original = defaults.data(forKey: Self.storageKey) else {
+        guard storageError != nil, let value = defaults.object(forKey: Self.storageKey) else {
             throw ProfileRecoveryError.noArchiveData
+        }
+        let original: Data
+        let fileExtension: String
+        if let bytes = value as? Data {
+            original = bytes
+            fileExtension = "json"
+        } else {
+            original = try PropertyListSerialization.data(fromPropertyList: ["value": value, "type": String(describing: type(of: value))],
+                                                          format: .binary, options: 0)
+            fileExtension = "plist"
         }
         try FileManager.default.createDirectory(at: archiveDirectory, withIntermediateDirectories: true)
         var directory = archiveDirectory
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         try directory.setResourceValues(values)
-        let archive = archiveDirectory.appendingPathComponent("profiles.v1.unreadable-\(UUID().uuidString).json")
+        let archive = archiveDirectory.appendingPathComponent("profiles.v1.unreadable-\(UUID().uuidString).\(fileExtension)")
         try original.write(to: archive, options: [.atomic, .completeFileProtection])
         guard try Data(contentsOf: archive) == original else { throw ProfileRecoveryError.couldNotArchive }
         defaults.removeObject(forKey: Self.storageKey)

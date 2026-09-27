@@ -41,6 +41,19 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(ProfileStore(defaults: defaults).selectedID, ProfileStore.defaultID)
     }
 
+    func testWrongTypePreferenceCanBeArchivedWithoutSilentlyReplacingIt() throws {
+        let defaults = try isolatedDefaults()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        defaults.set("wrong type", forKey: ProfileStore.storageKey)
+        let store = ProfileStore(defaults: defaults, archiveDirectory: directory)
+        XCTAssertNotNil(store.storageError)
+        let archive = try store.archiveUnreadableProfilesAndReset()
+        let saved = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: archive), format: nil) as? [String: String])
+        XCTAssertEqual(saved["value"], "wrong type")
+        XCTAssertNil(store.storageError)
+    }
+
     func testFailedProfileArchiveKeepsOriginalPreferenceAndBlocksWrites() throws {
         let defaults = try isolatedDefaults()
         let blocker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

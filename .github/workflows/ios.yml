@@ -19,6 +19,8 @@ jobs:
         run: brew install xcodegen
       - name: Generate project
         run: xcodegen generate
+      - name: Run release and source regression tests
+        run: python3 -m unittest discover -s Tests -p 'test_*.py'
       - name: Create iPhone simulator
         id: simulator
         shell: bash

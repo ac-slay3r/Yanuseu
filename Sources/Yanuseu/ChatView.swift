@@ -88,6 +88,7 @@ struct ChatView: View {
     @State private var showRecoveryConfirmation = false
     @State private var recoveryError: String?
     @State private var requestError: String?
+    @State private var unsentDraftAfterSaveFailure = false
     @State private var requestTask: Task<Void, Never>?
 
     private let credentials = ProviderCredentialStore()
@@ -164,7 +165,7 @@ struct ChatView: View {
                 }
             }
             .sheet(isPresented: $showConversations) {
-                ConversationListView(store: store)
+                ConversationListView(store: store, knownProfileIDs: Set(profiles.profiles.map(\.id)))
             }
             .sheet(isPresented: $showSettings) {
                 ProviderSetupView(profiles: profiles)
@@ -228,7 +229,14 @@ struct ChatView: View {
                 get: { requestError != nil },
                 set: { if !$0 { requestError = nil } }
             )) {
-                Button("Retry") { requestError = nil; startRequest() }
+                Button("Retry") {
+                    requestError = nil
+                    if unsentDraftAfterSaveFailure {
+                        send() // Save the unsent draft first; never dispatch a history that omitted it.
+                    } else {
+                        startRequest()
+                    }
+                }
                 Button("Dismiss", role: .cancel) { requestError = nil }
             } message: {
                 Text(requestError ?? "Check your provider configuration and connection.")
@@ -238,6 +246,7 @@ struct ChatView: View {
             if !isSending {
                 profiles.saveDraft(draft, for: oldID)
                 draft = profiles.draft(for: id)
+                unsentDraftAfterSaveFailure = false
                 store.switchProfile(id)
             }
         }
@@ -296,9 +305,11 @@ struct ChatView: View {
             return
         }
         guard store.append(ChatMessage(role: .user, content: text)) else {
+            unsentDraftAfterSaveFailure = true
             requestError = "Conversation history could not be saved. Your draft is still in the composer; no request was sent."
             return
         }
+        unsentDraftAfterSaveFailure = false
         draft = ""
         startRequest()
     }
@@ -431,15 +442,23 @@ private struct MessageBubble: View {
 private struct ConversationListView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var store: ConversationStore
+    let knownProfileIDs: Set<String>
     @State private var renameTarget: Conversation?
     @State private var renameText = ""
     @State private var deleteTarget: Conversation?
     @State private var confirmClearAll = false
     @State private var searchText = ""
     @State private var showingArchived = false
+    @State private var showingOrphans = false
+    @State private var orphanToRecover: Conversation?
+    @State private var orphanRecoveryError: String?
 
     private var sessions: [Conversation] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if showingOrphans {
+            let orphans = store.orphanedConversations(knownProfileIDs: knownProfileIDs)
+            return query.isEmpty ? orphans : orphans.filter { $0.title.localizedStandardContains(query) }
+        }
         if !showingArchived { return store.search(query) }
         guard !query.isEmpty else { return store.archivedConversations }
         return store.archivedConversations.filter { session in
@@ -451,10 +470,16 @@ private struct ConversationListView: View {
     var body: some View {
         NavigationStack {
             List {
+                if showingOrphans {
+                    Section {
+                        Text("These sessions belonged to a profile no longer in the profile list. Moving one into your active profile makes its history available to future provider requests. Review before recovering.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 ForEach(sessions) { conversation in
                     Button {
-                        store.select(conversation.id)
-                        dismiss()
+                        if showingOrphans { orphanToRecover = conversation }
+                        else { store.select(conversation.id); dismiss() }
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(conversation.title).font(.headline).lineLimit(1)
@@ -475,13 +500,15 @@ private struct ConversationListView: View {
                         ShareLink(item: ConversationExporter.text(for: conversation), subject: Text(conversation.title)) {
                             Label("Export Conversation", systemImage: "square.and.arrow.up")
                         }
-                        Button("Rename", systemImage: "pencil") { renameTarget = conversation; renameText = conversation.title }
-                        if conversation.isArchived {
-                            Button("Unarchive", systemImage: "archivebox.fill") { store.unarchive(conversation.id) }
-                        } else {
-                            Button("Archive", systemImage: "archivebox") { store.archive(conversation.id) }
+                        if !showingOrphans {
+                            Button("Rename", systemImage: "pencil") { renameTarget = conversation; renameText = conversation.title }
+                            if conversation.isArchived {
+                                Button("Unarchive", systemImage: "archivebox.fill") { store.unarchive(conversation.id) }
+                            } else {
+                                Button("Archive", systemImage: "archivebox") { store.archive(conversation.id) }
+                            }
+                            Button("Delete", systemImage: "trash", role: .destructive) { deleteTarget = conversation }
                         }
-                        Button("Delete", systemImage: "trash", role: .destructive) { deleteTarget = conversation }
                     }
                 }
             }
@@ -491,12 +518,19 @@ private struct ConversationListView: View {
                     ContentUnavailableView.search(text: searchText)
                 }
             }
-            .navigationTitle(showingArchived ? "Archived Sessions" : "Conversations")
+            .navigationTitle(showingOrphans ? "Recover Sessions" : showingArchived ? "Archived Sessions" : "Conversations")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Menu {
                         Button(showingArchived ? "Show Conversations" : "Show Archived Sessions", systemImage: "archivebox") {
                             showingArchived.toggle()
+                            showingOrphans = false
+                        }
+                        if !store.orphanedConversations(knownProfileIDs: knownProfileIDs).isEmpty {
+                            Button(showingOrphans ? "Show Conversations" : "Recover Missing-Profile Sessions", systemImage: "person.crop.circle.badge.questionmark") {
+                                showingOrphans.toggle()
+                                showingArchived = false
+                            }
                         }
                         Button("Clear All Conversation History", systemImage: "trash", role: .destructive) {
                             confirmClearAll = true
@@ -526,6 +560,25 @@ private struct ConversationListView: View {
             } message: {
                 Text("This clears transcripts from this iPhone. Requests already sent to your provider cannot be recalled.")
             }
+            .confirmationDialog("Move this session into the active profile?", isPresented: Binding(
+                get: { orphanToRecover != nil }, set: { if !$0 { orphanToRecover = nil } }
+            ), titleVisibility: .visible) {
+                Button("Move Session") {
+                    if let orphan = orphanToRecover,
+                       !store.recoverOrphanedConversation(orphan.id, knownProfileIDs: knownProfileIDs) {
+                        orphanRecoveryError = store.persistenceError ?? "The session was not moved."
+                    }
+                    orphanToRecover = nil
+                }
+                Button("Cancel", role: .cancel) { orphanToRecover = nil }
+            } message: {
+                Text("The old profile is missing. Its messages will be available to the selected profile and may be sent to that profile’s provider on future turns. The original archive is not changed.")
+            }
+            .alert("Session recovery failed", isPresented: Binding(
+                get: { orphanRecoveryError != nil }, set: { if !$0 { orphanRecoveryError = nil } }
+            )) {
+                Button("OK") { orphanRecoveryError = nil }
+            } message: { Text(orphanRecoveryError ?? "No session was moved.") }
         }
     }
 }
