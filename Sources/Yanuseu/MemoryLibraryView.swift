@@ -22,7 +22,7 @@ struct MemoryLibraryView: View {
             Section {
                 Label(storageError, systemImage: "exclamationmark.triangle.fill")
                 Button("Retry reading local memory") {
-                    do { try store.reload() } catch { error = error.localizedDescription }
+                    do { try store.reload() } catch { self.error = error.localizedDescription }
                 }
             }
         } else {
@@ -55,7 +55,7 @@ struct MemoryLibraryView: View {
 
     private func saveNote() {
         do { try store.add(draft, profileID: profileID); draft = "" }
-        catch { error = error.localizedDescription }
+        catch { self.error = error.localizedDescription }
     }
 
     var body: some View {
@@ -70,7 +70,7 @@ struct MemoryLibraryView: View {
                 Button("Save") {
                     if let note = editing {
                         do { try store.edit(note.id, text: editText, profileID: profileID); editText = "" }
-                        catch { error = error.localizedDescription }
+                        catch { self.error = error.localizedDescription }
                     }
                     editing = nil
                 }
@@ -84,7 +84,7 @@ struct MemoryLibraryView: View {
                 Button("Delete Note", role: .destructive) {
                     if let note = pendingDelete {
                         do { try store.delete(note.id, profileID: profileID) }
-                        catch { error = error.localizedDescription }
+                        catch { self.error = error.localizedDescription }
                     }
                     pendingDelete = nil
                 }
