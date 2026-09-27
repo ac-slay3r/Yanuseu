@@ -81,6 +81,13 @@ class TestFlightReleaseSourceTests(unittest.TestCase):
                       'UIInterfaceOrientationLandscapeRight'):
             self.assertIn(token, project)
 
+    def test_generated_info_plist_keeps_release_identity_overrides(self):
+        project = (ROOT / 'project.yml').read_text()
+        for token in ('CFBundleIdentifier: "$(PRODUCT_BUNDLE_IDENTIFIER)"',
+                      'CFBundleShortVersionString: "$(MARKETING_VERSION)"',
+                      'CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"'):
+            self.assertIn(token, project)
+
 
 class ReleaseValidationTests(unittest.TestCase):
     def test_archive_metadata_rejects_old_sdk_and_missing_ipad_orientations(self):

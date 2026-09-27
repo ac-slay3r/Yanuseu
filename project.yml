@@ -22,6 +22,9 @@ targets:
     info:
       path: Sources/Yanuseu/Info.plist
       properties:
+        CFBundleIdentifier: "$(PRODUCT_BUNDLE_IDENTIFIER)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDisplayName: Yanuseu
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
