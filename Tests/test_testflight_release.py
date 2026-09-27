@@ -67,8 +67,39 @@ class TestFlightReleaseSourceTests(unittest.TestCase):
             self.assertIn(token, text)
         self.assertIn('PRODUCT_BUNDLE_IDENTIFIER: cool.n0thing.yanus.tests', text)
 
+    def test_store_upload_uses_current_sdk_and_explicit_ipad_orientations(self):
+        release_workflow = (ROOT / '.github/workflows/testflight.yml').read_text()
+        simulator_workflow = (ROOT / '.github/workflows/ios.yml').read_text()
+        for workflow in (release_workflow, simulator_workflow):
+            self.assertIn('/Applications/Xcode_26.3.app/Contents/Developer', workflow)
+        project = (ROOT / 'project.yml').read_text()
+        for token in ('UISupportedInterfaceOrientations:',
+                      'UISupportedInterfaceOrientations~ipad:',
+                      'UIInterfaceOrientationPortrait',
+                      'UIInterfaceOrientationPortraitUpsideDown',
+                      'UIInterfaceOrientationLandscapeLeft',
+                      'UIInterfaceOrientationLandscapeRight'):
+            self.assertIn(token, project)
+
 
 class ReleaseValidationTests(unittest.TestCase):
+    def test_archive_metadata_rejects_old_sdk_and_missing_ipad_orientations(self):
+        orientations = ['UIInterfaceOrientationPortrait',
+                        'UIInterfaceOrientationPortraitUpsideDown',
+                        'UIInterfaceOrientationLandscapeLeft',
+                        'UIInterfaceOrientationLandscapeRight']
+        info = {'DTSDKName': 'iphoneos26.3',
+                'UISupportedInterfaceOrientations': orientations,
+                'UISupportedInterfaceOrientations~ipad': orientations}
+        release.verify_store_metadata(info)
+        for change in ({'DTSDKName': 'iphoneos18.5'},
+                       {'DTSDKName': ''},
+                       {'UISupportedInterfaceOrientations': []},
+                       {'UISupportedInterfaceOrientations~ipad': orientations[:2]}):
+            with self.subTest(change=change):
+                with self.assertRaises(ValueError):
+                    release.verify_store_metadata({**info, **change})
+
     def test_inputs_reject_malformed_sha_and_build(self):
         for sha, version, build in [('main', '1.2.3', '4'), ('a' * 40, 'v1.2', '4'),
                                     ('a' * 40, '1.2', '0'), ('a' * 40, '1.2', '1; echo bad')]:
