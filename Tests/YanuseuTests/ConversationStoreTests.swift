@@ -3,6 +3,37 @@ import XCTest
 
 @MainActor
 final class ConversationStoreTests: XCTestCase {
+    func testProfileSwitchSearchResumeArchiveAndDeleteScenarioAcrossReload() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let file = directory.appendingPathComponent("history.json")
+        let suite = "YanuseuTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let store = ConversationStore(fileURL: file, defaults: defaults)
+        store.append(ChatMessage(role: .user, content: "Personal mountain"))
+        let personal = store.activeID
+        store.switchProfile("work")
+        store.append(ChatMessage(role: .user, content: "Work mountain"))
+        let work = store.activeID
+        XCTAssertEqual(store.search("mountain").map(\.id), [work])
+        store.switchProfile(ProfileStore.defaultID)
+        XCTAssertEqual(store.search("mountain").map(\.id), [personal])
+        store.archive(personal)
+        XCTAssertTrue(store.search("mountain").isEmpty)
+        let resumed = ConversationStore(fileURL: file, defaults: defaults)
+        XCTAssertEqual(resumed.archivedConversations.map(\.id), [personal])
+        resumed.select(personal)
+        XCTAssertEqual(resumed.activeConversation.messages.map(\.content), ["Personal mountain"])
+        resumed.delete(personal)
+        XCTAssertTrue(resumed.search("mountain").isEmpty)
+        resumed.switchProfile("work")
+        XCTAssertEqual(resumed.search("mountain").map(\.id), [work])
+        XCTAssertEqual(resumed.activeConversation.messages.map(\.content), ["Work mountain"])
+    }
+
     func testLegacyArchiveFlagDefaultsToVisibleAndRoundTrips() throws {
         let original = Conversation(title: "Legacy")
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
