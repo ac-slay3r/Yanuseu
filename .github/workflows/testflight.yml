@@ -124,7 +124,7 @@ jobs:
           if [[ -e "$PROFILE_CANDIDATE" ]]; then echo 'Provisioning profile destination already exists; refusing overwrite' >&2; exit 1; fi
           cp "$WORK/profile.mobileprovision" "$PROFILE_CANDIDATE"
           PROFILE_DEST="$PROFILE_CANDIDATE"
-          xcodebuild archive -project Yanuseu.xcodeproj -scheme Yanuseu -configuration Release -destination 'generic/platform=iOS' -archivePath "$WORK/Yanuseu.xcarchive" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=2CH5J3W7UH PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" CODE_SIGN_IDENTITY='Apple Distribution' MARKETING_VERSION="$RELEASE_VERSION" CURRENT_PROJECT_VERSION="$RELEASE_BUILD"
+          xcodebuild archive -project Yanuseu.xcodeproj -scheme Yanuseu -configuration Release -destination 'generic/platform=iOS' -archivePath "$WORK/Yanuseu.xcarchive" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=VYJS7JMXU5 PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" CODE_SIGN_IDENTITY='Apple Distribution' MARKETING_VERSION="$RELEASE_VERSION" CURRENT_PROJECT_VERSION="$RELEASE_BUILD"
           python3 tools/testflight_release.py verify-archive "$WORK/Yanuseu.xcarchive/Products/Applications/Yanuseu.app" "$RELEASE_VERSION" "$RELEASE_BUILD" "$WORK/profile.mobileprovision"
           xcodebuild -exportArchive -archivePath "$WORK/Yanuseu.xcarchive" -exportPath "$WORK/export" -exportOptionsPlist "$WORK/ExportOptions.plist"
           IPA="$WORK/export/Yanuseu.ipa"

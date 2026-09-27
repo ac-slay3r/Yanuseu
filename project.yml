@@ -21,7 +21,7 @@ targets:
       - path: Sources/Yanuseu
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: cool.n0thing.yanuseu
+        PRODUCT_BUNDLE_IDENTIFIER: cool.n0thing.yanus
         CODE_SIGN_STYLE: Manual
         INFOPLIST_KEY_CFBundleDisplayName: Yanuseu
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -42,5 +42,5 @@ targets:
       - target: Yanuseu
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: cool.n0thing.yanuseu.tests
+        PRODUCT_BUNDLE_IDENTIFIER: cool.n0thing.yanus.tests
         GENERATE_INFOPLIST_FILE: YES

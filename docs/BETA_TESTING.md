@@ -4,7 +4,7 @@ This is an iPhone-hosted agent, not a desktop Hermes client. In the current buil
 
 ## Before inviting testers
 
-- Record the exact Git SHA, CFBundleShortVersionString, CFBundleVersion, distribution team, bundle ID (`cool.n0thing.yanuseu`), signed IPA archive, and App Store Connect processed build number. Simulator CI and uploaded IPA are different artifacts.
+- Record the exact Git SHA, CFBundleShortVersionString, CFBundleVersion, distribution team, bundle ID (`cool.n0thing.yanus`), signed IPA archive, and App Store Connect processed build number. Simulator CI and uploaded IPA are different artifacts.
 - Review App Store Connect App Privacy against direct prompt/instruction/memory transmission to the tester's chosen provider, local protected histories and Keychain keys. Verify export compliance and territories/agreements. Never place tester API keys in CI or screenshots.
 - Install the processed TestFlight build on a physical iPhone. Run the scenarios below without a desktop, gateway, or VPS. Record device/iOS version, provider type (not key), build number, result, screenshots with secrets redacted, and any crash diagnostics.
 

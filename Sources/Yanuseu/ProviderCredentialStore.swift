@@ -8,7 +8,7 @@ protocol CredentialBackend {
 }
 
 struct KeychainCredentialBackend: CredentialBackend {
-    private let service = Bundle.main.bundleIdentifier ?? "cool.n0thing.yanuseu"
+    private let service = Bundle.main.bundleIdentifier ?? "cool.n0thing.yanus"
 
     private func query(_ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
