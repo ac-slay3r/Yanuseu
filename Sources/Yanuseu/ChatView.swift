@@ -57,6 +57,7 @@ struct ChatView: View {
     @State private var showConversations = false
     @State private var showSettings = false
     @State private var showSkills = false
+    @State private var showTools = false
     @State private var showCommands = false
     @State private var pendingPaletteCommand: AppCommand?
     @State private var showClearConfirmation = false
@@ -146,6 +147,9 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showSkills) {
                 SkillLibraryView(store: skills, profileID: profiles.selectedID)
+            }
+            .sheet(isPresented: $showTools) {
+                ToolControlsView(profiles: profiles, profileID: profiles.selectedID)
             }
             .sheet(isPresented: $showCommands, onDismiss: {
                 if let command = pendingPaletteCommand {
@@ -278,8 +282,7 @@ struct ChatView: View {
         case .clearConversation:
             showClearConfirmation = true
         case .tools:
-            let calculatorStatus = profiles.selected.calculatorEnabled ? "enabled" : "disabled"
-            store.append(ChatMessage(role: .assistant, content: "Local tools: Calculator (\(calculatorStatus)). It only evaluates basic arithmetic. No shell, filesystem, network, or other-app tools are available."))
+            showTools = true
         case .settings:
             showSettings = true
         case .skills:
