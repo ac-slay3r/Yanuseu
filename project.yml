@@ -19,15 +19,23 @@ targets:
     platform: iOS
     sources:
       - path: Sources/Yanuseu
+    info:
+      path: Sources/Yanuseu/Info.plist
+      properties:
+        CFBundleDisplayName: Yanuseu
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cool.n0thing.yanus
         CODE_SIGN_STYLE: Manual
-        INFOPLIST_KEY_CFBundleDisplayName: Yanuseu
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        GENERATE_INFOPLIST_FILE: YES
     scheme:
       archive:
         config: Release

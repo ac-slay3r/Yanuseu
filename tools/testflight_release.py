@@ -121,6 +121,19 @@ def export_options(path, profile):
     Path(path).write_bytes(plistlib.dumps(options))
 
 
+def verify_store_metadata(info):
+    sdk = info.get('DTSDKName', '')
+    match = re.fullmatch(r'iphoneos([0-9]+)(?:\.[0-9]+)*', sdk)
+    if not match or int(match.group(1)) < 26:
+        fail('App Store Connect requires an iOS 26 or newer SDK')
+    if 'UIInterfaceOrientationPortrait' not in info.get('UISupportedInterfaceOrientations', []):
+        fail('iPhone portrait orientation is required')
+    ipad = {'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
+            'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'}
+    if not ipad.issubset(set(info.get('UISupportedInterfaceOrientations~ipad', []))):
+        fail('iPad multitasking requires all four interface orientations')
+
+
 def verify_app(app, version, build, intended_profile):
     app = Path(app)
     if not app.is_dir() or list((app / 'PlugIns').glob('*.appex')):
@@ -129,6 +142,7 @@ def verify_app(app, version, build, intended_profile):
     if (info.get('CFBundleIdentifier'), info.get('CFBundleShortVersionString'),
             str(info.get('CFBundleVersion'))) != (BUNDLE, version, build):
         fail('Signed app bundle ID/version/build does not match dispatch inputs')
+    verify_store_metadata(info)
     profile, certs = profile_info(app / 'embedded.mobileprovision')
     original, _ = profile_info(intended_profile)
     if profile['UUID'] != original['UUID']:
