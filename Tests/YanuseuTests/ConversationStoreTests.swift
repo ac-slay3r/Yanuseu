@@ -3,6 +3,17 @@ import XCTest
 
 @MainActor
 final class ConversationStoreTests: XCTestCase {
+    func testFailedMessagePersistenceDoesNotConsumeOrDuplicateTheMessage() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("not a directory".utf8).write(to: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ConversationStore(fileURL: directory.appendingPathComponent("history.json"))
+        let message = ChatMessage(role: .user, content: "Do not lose this draft")
+        XCTAssertFalse(store.append(message))
+        XCTAssertTrue(store.activeConversation.messages.isEmpty)
+        XCTAssertNotNil(store.persistenceError)
+    }
+
     func testProfileSwitchSearchResumeArchiveAndDeleteScenarioAcrossReload() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let file = directory.appendingPathComponent("history.json")

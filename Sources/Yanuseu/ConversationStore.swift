@@ -181,11 +181,18 @@ final class ConversationStore: ObservableObject {
         persist()
     }
 
-    func append(_ message: ChatMessage) {
-        guard let index = conversations.firstIndex(where: { $0.id == activeID }) else { return }
+    @discardableResult
+    func append(_ message: ChatMessage) -> Bool {
+        guard !needsRecovery, let index = conversations.firstIndex(where: { $0.id == activeID }) else { return false }
+        let previous = conversations
         conversations[index].append(message)
         conversations.sort { $0.updatedAt > $1.updatedAt }
         persist()
+        if persistenceError != nil {
+            conversations = previous
+            return false
+        }
+        return true
     }
 
     func rename(_ id: UUID, to title: String) {

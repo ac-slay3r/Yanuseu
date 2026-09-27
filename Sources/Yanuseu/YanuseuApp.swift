@@ -64,6 +64,17 @@ struct ProviderSetupView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if !profiles.archivedProfilesURLs.isEmpty {
+                    Section("Recovery archives") {
+                        Text("Unreadable profile bytes are saved locally. Export is optional; these files are not repaired profiles.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        ForEach(profiles.archivedProfilesURLs, id: \.self) { archive in
+                            ShareLink(item: archive) {
+                                Label("Export \(archive.lastPathComponent)", systemImage: "square.and.arrow.up")
+                            }
+                        }
+                    }
+                }
                 Section("Local agent profile") {
                     Picker("Active profile", selection: Binding(get: { profiles.selectedID }, set: selectProfile)) {
                         ForEach(profiles.profiles) { profile in
@@ -339,7 +350,7 @@ struct ProviderSetupView: View {
                                instructions: agentInstructions, calculatorEnabled: calculatorEnabled)
             apiKey = ""
             didSucceed = true
-            statusMessage = "Connection verified for \(profiles.selected.name)."
+            statusMessage = "Model-list endpoint responded for \(profiles.selected.name). Chat has not been tested; send a message to confirm this model supports chat completions."
             onConfigured?()
         } catch {
             statusMessage = error.localizedDescription

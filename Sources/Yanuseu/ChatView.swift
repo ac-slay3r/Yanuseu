@@ -5,11 +5,24 @@ struct AppRootView: View {
     @State private var hasKey = false
     @State private var checked = false
     @State private var credentialError: String?
+    @State private var profileRecoveryError: String?
+    @State private var showProfileRecoveryConfirmation = false
     private let credentials = ProviderCredentialStore()
 
     var body: some View {
         Group {
-            if let credentialError {
+            if let profileError = profiles.storageError {
+                VStack(spacing: 16) {
+                    ContentUnavailableView("Profiles need attention", systemImage: "person.crop.circle.badge.exclamationmark",
+                                           description: Text(profileError))
+                    Text("The saved profile index cannot be read. Resetting it will not delete Keychain keys or conversations, but you may need to configure your profiles again.")
+                        .font(.footnote).padding(.horizontal)
+                    Button("Archive unreadable profiles and reset", role: .destructive) {
+                        showProfileRecoveryConfirmation = true
+                    }
+                    if let profileRecoveryError { Text(profileRecoveryError).foregroundStyle(.red) }
+                }.padding()
+            } else if let credentialError {
                 VStack(spacing: 16) {
                     Text(credentialError)
                     Button("Retry Keychain Access") { refreshKey() }
@@ -29,6 +42,15 @@ struct AppRootView: View {
         }
         .onChange(of: profiles.selectedID) { _, _ in refreshKey() }
         .onChange(of: profiles.selected.isConfigured) { _, _ in refreshKey() }
+        .confirmationDialog("Archive unreadable profiles and reset?", isPresented: $showProfileRecoveryConfirmation) {
+            Button("Archive and Reset", role: .destructive) {
+                do { _ = try profiles.archiveUnreadableProfilesAndReset(); refreshKey() }
+                catch { profileRecoveryError = error.localizedDescription }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The original profile bytes will be preserved in protected app storage. Existing provider keys and conversations are not deleted. This does not repair unreadable data.")
+        }
     }
 
     private func refreshKey() {
@@ -268,12 +290,16 @@ struct ChatView: View {
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isSending, !store.needsRecovery else { return }
-        draft = ""
         if let command = AppCommand.parse(text) {
+            draft = ""
             run(command)
             return
         }
-        store.append(ChatMessage(role: .user, content: text))
+        guard store.append(ChatMessage(role: .user, content: text)) else {
+            requestError = "Conversation history could not be saved. Your draft is still in the composer; no request was sent."
+            return
+        }
+        draft = ""
         startRequest()
     }
 
