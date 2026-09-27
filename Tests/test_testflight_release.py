@@ -18,6 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestFlightReleaseSourceTests(unittest.TestCase):
+    def test_release_team_matches_yanuseu_account(self):
+        self.assertEqual(release.TEAM, '2CH5J3W7UH')
+        self.assertIn('DEVELOPMENT_TEAM=2CH5J3W7UH', (ROOT / '.github/workflows/testflight.yml').read_text())
+
     def test_dispatch_is_manual_pinned_and_gated_before_signing(self):
         text = (ROOT / '.github/workflows/testflight.yml').read_text()
         self.assertIn('workflow_dispatch:', text)
