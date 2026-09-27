@@ -18,9 +18,9 @@ open Yanuseu.xcodeproj
 
 Select an iPhone simulator and build/run from Xcode. GitHub Actions builds the simulator target on pushes and pull requests.
 
-## TestFlight
+## TestFlight and beta testing
 
-TestFlight readiness is still pending verification: confirm the matching App Store Connect app record, distribution signing and provisioning, a signed device archive upload, export-compliance information, and app privacy details. Keep distribution credentials in protected CI secrets. Provider API keys are supplied by each user and belong only in iOS Keychain; never put them in repository or CI configuration.
+The [manual TestFlight workflow](.github/workflows/testflight.yml) signs and uploads only an exact green `main` SHA after its Apple credentials are configured. **No signed archive, TestFlight upload, ASC processing, or physical-device turn has been verified yet.** See [release setup](docs/TESTFLIGHT_RELEASE.md), [device acceptance](docs/BETA_TESTING.md), and the [capability map](docs/HERMES_IOS_CAPABILITY_MAP.md). Provider API keys are supplied by each user and belong only in iOS Keychain; never put them in repository or CI configuration.
 
 ## Security boundaries
 

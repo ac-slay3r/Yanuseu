@@ -69,6 +69,23 @@ final class ConversationStore: ObservableObject {
 
     var archivedConversations: [Conversation] { conversations.filter { $0.profileID == selectedProfileID && $0.isArchived } }
 
+    func orphanedConversations(knownProfileIDs: Set<String>) -> [Conversation] {
+        conversations.filter { !knownProfileIDs.contains($0.profileID) }
+    }
+
+    @discardableResult
+    func recoverOrphanedConversation(_ id: UUID, knownProfileIDs: Set<String>) -> Bool {
+        guard !needsRecovery, knownProfileIDs.contains(selectedProfileID),
+              let index = conversations.firstIndex(where: { $0.id == id && !knownProfileIDs.contains($0.profileID) })
+        else { return false }
+        let previous = conversations
+        conversations[index].profileID = selectedProfileID
+        conversations[index].isArchived = false
+        persist()
+        if persistenceError != nil { conversations = previous; return false }
+        return true
+    }
+
     func search(_ query: String) -> [Conversation] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return visibleConversations }
@@ -181,11 +198,18 @@ final class ConversationStore: ObservableObject {
         persist()
     }
 
-    func append(_ message: ChatMessage) {
-        guard let index = conversations.firstIndex(where: { $0.id == activeID }) else { return }
+    @discardableResult
+    func append(_ message: ChatMessage) -> Bool {
+        guard !needsRecovery, let index = conversations.firstIndex(where: { $0.id == activeID }) else { return false }
+        let previous = conversations
         conversations[index].append(message)
         conversations.sort { $0.updatedAt > $1.updatedAt }
         persist()
+        if persistenceError != nil {
+            conversations = previous
+            return false
+        }
+        return true
     }
 
     func rename(_ id: UUID, to title: String) {

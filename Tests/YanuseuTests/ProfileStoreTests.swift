@@ -24,6 +24,50 @@ final class ProfileStoreTests: XCTestCase {
         XCTAssertEqual(ProfileStore(defaults: defaults).selected.model, "legacy-model")
     }
 
+    func testUnreadableProfilesCannotBeSilentlyReplacedAndRequireExplicitArchive() throws {
+        let defaults = try isolatedDefaults()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = Data("damaged profile index".utf8)
+        defaults.set(original, forKey: ProfileStore.storageKey)
+        let blocked = ProfileStore(defaults: defaults, archiveDirectory: directory)
+        XCTAssertNotNil(blocked.storageError)
+        blocked.create(name: "Should not save")
+        XCTAssertEqual(defaults.data(forKey: ProfileStore.storageKey), original)
+        let archive = try blocked.archiveUnreadableProfilesAndReset()
+        XCTAssertEqual(try Data(contentsOf: archive), original)
+        XCTAssertEqual(ProfileStore(defaults: defaults, archiveDirectory: directory).archivedProfilesURLs, [archive])
+        XCTAssertNil(blocked.storageError)
+        XCTAssertEqual(ProfileStore(defaults: defaults).selectedID, ProfileStore.defaultID)
+    }
+
+    func testWrongTypePreferenceCanBeArchivedWithoutSilentlyReplacingIt() throws {
+        let defaults = try isolatedDefaults()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        defaults.set("wrong type", forKey: ProfileStore.storageKey)
+        let store = ProfileStore(defaults: defaults, archiveDirectory: directory)
+        XCTAssertNotNil(store.storageError)
+        let archive = try store.archiveUnreadableProfilesAndReset()
+        let saved = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: archive), format: nil) as? [String: String])
+        XCTAssertEqual(saved["value"], "wrong type")
+        XCTAssertNil(store.storageError)
+    }
+
+    func testFailedProfileArchiveKeepsOriginalPreferenceAndBlocksWrites() throws {
+        let defaults = try isolatedDefaults()
+        let blocker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("blocker".utf8).write(to: blocker)
+        defer { try? FileManager.default.removeItem(at: blocker) }
+        let original = Data("damaged".utf8)
+        defaults.set(original, forKey: ProfileStore.storageKey)
+        let store = ProfileStore(defaults: defaults, archiveDirectory: blocker.appendingPathComponent("archives"))
+        XCTAssertThrowsError(try store.archiveUnreadableProfilesAndReset())
+        XCTAssertNotNil(store.storageError)
+        store.select(ProfileStore.defaultID)
+        XCTAssertEqual(defaults.data(forKey: ProfileStore.storageKey), original)
+    }
+
     func testCreateSelectUpdateAndReloadAreIsolated() throws {
         let defaults = try isolatedDefaults()
         let store = ProfileStore(defaults: defaults)
